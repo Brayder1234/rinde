@@ -305,3 +305,10 @@ button.safe { display: block; width: 100%; text-align: left; }
 .money-total b:last-child { font-variant-numeric: tabular-nums; }
 .onb-note { margin: -2px 0 12px; }
 .money-q { font-size: 22px; margin: 4px 4px 8px; letter-spacing: -.01em; }
+
+/* ---------- Pagos de Apple Pay */
+.paste-card { color: inherit; }
+.paste-ic { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--brand-soft); color: var(--brand); flex: none; }
+.code-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 10px 12px; margin: 4px 0 8px; border-radius: 12px; background: var(--fill); font: 600 15px/1.4 ui-monospace, "SF Mono", Menlo, monospace; }
+.code-line i { font-style: normal; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 13px; background: var(--brand); color: #fff; padding: 3px 8px; border-radius: 7px; }
+.paste-box { display: block; width: 100%; border: 0; outline: none; background: none; resize: none; font-size: 16px; color: var(--text); }

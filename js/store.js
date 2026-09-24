@@ -29,7 +29,7 @@ function defaults() {
   return {
     v: 1,
     settings: { onboarded: false, name: '', currency: guessCurrency(), budget: 0, cycleDay: 1, hide: false,
-      theme: 'auto', alerts: true, safeMode: 0, lastBackup: null, installDismissed: false, lastAccount: {} },
+      theme: 'auto', alerts: true, safeMode: 0, lastBackup: null, installDismissed: false, lastAccount: {}, applePay: false, cardAccounts: {} },
     categories: seedCategories(),
     accounts: seedAccounts(),
     movements: [],
@@ -37,6 +37,7 @@ function defaults() {
     goals: [],
     learned: {},
     alertsSent: {},
+    pasted: {},
   };
 }
 

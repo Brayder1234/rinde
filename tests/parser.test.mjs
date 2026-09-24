@@ -1,5 +1,5 @@
 // Pruebas del analizador (mismas de la app nativa). Ejecutar: node tests/parser.test.mjs
-import { parse, parseNumberLiteral, parseReceipt, key } from '../js/parser.js';
+import { parse, parseNumberLiteral, parseReceipt, parseWalletPayments, key } from '../js/parser.js';
 import { SEED, ACCOUNT_SEED } from '../js/catalog.js';
 import { periodContaining, shiftPeriod, daysLeft, occurrence, fmt, compact } from '../js/money.js';
 
@@ -100,6 +100,20 @@ const mixed = pa('almuerzo 20 mil con nequi y taxi 12 mil en efectivo');
 check(mixed[0].accountId === 'nequi' && mixed[1].accountId === 'cash', `cuentas distintas ${JSON.stringify(mixed)}`);
 check(pa('almuerzo 18 mil')[0].accountId === null, 'sin cuenta');
 check(p('almuerzo 18 mil con nequi')[0].note === 'Almuerzo con nequi', 'sin lista de cuentas no cambia nada');
+
+// Pagos de Apple Pay copiados por Atajos
+const wp = (t) => parseWalletPayments(t, matchers, {}, accounts, now);
+let w = wp('RINDE|$ 18.000,00|Starbucks|Bancolombia Visa|2026-09-24T12:30:00-05:00')[0];
+check(w && w.amount === 18000 && w.kind === 'expense' && w.note === 'Starbucks' && w.accountId === 'bancolombia' && k(w) === 'food'
+  && w.date.getHours() === 12, `apple pay 1 ${JSON.stringify(w)}`);
+w = wp('RINDE|COP 45.900|Éxito|Débito Davivienda')[0];
+check(w && w.amount === 45900 && w.accountId === 'davivienda' && k(w) === 'groceries' && w.date === now, `apple pay sin fecha ${JSON.stringify(w)}`);
+w = wp('RINDE|US$ 12,99|Netflix|Tarjeta Nequi')[0];
+check(w && w.amount === 12.99 && w.currency === 'USD' && w.accountId === 'nequi' && k(w) === 'subscriptions', `apple pay usd ${JSON.stringify(w)}`);
+w = wp('RINDE|-$ 30.000|Falabella|Visa')[0];
+check(w && w.kind === 'income' && w.note === 'Devolución Falabella' && w.accountId === null, `devolución ${JSON.stringify(w)}`);
+check(wp('RINDE|18000|Uber|Visa\nRINDE|$ 9.500|D1|Visa').length === 2, 'varias líneas');
+check(wp('hola|18000|Uber').length === 0 && wp('RINDE||Uber').length === 0 && wp('').length === 0, 'texto que no es un pago');
 
 const per = periodContaining(now, 1);
 check(day(per.start) === '2026-9-1' && day(per.end) === '2026-10-1', 'periodo mes');

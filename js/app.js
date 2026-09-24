@@ -194,6 +194,8 @@ function viewHome() {
     ${moneyCard()}
     ${spendCard(s)}
     <button class="quick" data-act="openAdd">${icon('sparkles', 'brand')}<span>Escribe: “almuerzo 18 mil”</span><span class="quick-mic">${icon('plus')}</span></button>
+    ${S().applePay ? `<button class="card row-card paste-card" data-act="pastePayment"><span class="paste-ic">${icon('clipboard')}</span>
+      <span class="grow"><b>Pegar pago de Apple Pay</b><small>Registra el último pago que copió Atajos</small></span>${icon('right', 'muted')}</button>` : ''}
     <div class="tiles">
       ${tile('Gastos', s.spent, 'up', 'red')}${tile('Ingresos', s.income, 'dn', 'green')}${tile('Hoy', s.today, 'sun', 'orange')}
     </div>
@@ -366,6 +368,7 @@ function movementRow(m, showDate = false) {
   if (acct) parts.push(acct.name);
   if (showDate) parts.push(shortDate(L.md(m)));
   if (m.source === 'recurring') parts.push('Recurrente');
+  if (m.source === 'applepay') parts.push('Apple Pay');
   const sign = m.kind === 'expense' ? -1 : 1;
   return `<button class="row mv" data-act="editMovement" data-id="${m.id}">${catIcon(c)}
     <span class="grow"><b>${esc(title)}</b><small>${esc(parts.join(' · ') || (m.kind === 'expense' ? 'Gasto' : 'Ingreso'))}${(m.tags || []).length ? ` <em>${esc(m.tags.map((t) => '#' + t).join(' '))}</em>` : ''}</small></span>
@@ -660,6 +663,7 @@ SHEETS.add = {
         <div class="smart-actions">
           ${SR ? `<button class="pill-btn" data-act="dictate" id="dictBtn">${icon('mic')}<span>Dictar</span></button>` : ''}
           <label class="pill-btn">${icon('camera')}<span>Recibo</span><input type="file" accept="image/*" hidden data-ch="receipt"></label>
+          <button class="pill-btn" data-act="pasteInAdd">${icon('clipboard')}<span>Pegar</span></button>
           <span class="grow"></span>
           <button class="clear" data-act="clearSmart" aria-label="Borrar">${icon('x')}</button>
         </div>
@@ -825,6 +829,107 @@ A.addAcct = (d) => {
   navigator.vibrate?.(8);
 };
 A.newAccountFromAdd = () => openSheet('acctEdit', { fromAdd: true });
+
+// ---------------------------------------------------------------- Pagos de Apple Pay (vía Atajos y el portapapeles)
+
+async function readClipboard() {
+  try { return await navigator.clipboard.readText(); } catch { return null; }
+}
+
+/** Cuenta del pago: la que dice la tarjeta, la que se aprendió para esa tarjeta o la de siempre. */
+function paymentAccount(p) {
+  if (p.accountId) return p.accountId;
+  const learned = L.acctById(S().cardAccounts?.[P.key(p.card || '')]);
+  return learned && !learned.archived ? learned.id : defaultAcct(p.kind);
+}
+
+/** Registra los pagos copiados por Atajos. Devuelve false si el texto no trae ningún pago. */
+async function importPayments(text) {
+  const pays = L.parsePayments(text);
+  if (!pays.length) return false;
+  const fresh = pays.filter((p) => !state.pasted[p.key]);
+  if (!fresh.length) { toast('Ese pago ya estaba registrado.', true); return true; }
+  let alert = null; let last = null;
+  for (const p of fresh) {
+    const rate = p.currency && p.currency !== cur() ? (await L.exchangeRate(p.currency, cur())) || 1 : 1;
+    last = L.addMovement({ amount: p.amount, kind: p.kind, catId: p.categoryId, note: p.note, date: p.date, currency: p.currency || cur(),
+      rate, source: 'applepay', accountId: paymentAccount(p) });
+    if (p.card) last.card = p.card;
+    L.markPasted(p.key);
+    alert = L.budgetAlert(last) || alert;
+  }
+  S().applePay = true;
+  const a = L.acctById(last.accountId);
+  commit(alert || (fresh.length === 1
+    ? `Registrado: ${last.note} · ${M.fmt(last.amount, last.currency, { isMain: last.currency === cur() })}${a ? ` · ${a.name}` : ''}`
+    : `${fresh.length} pagos de Apple Pay registrados`), !!alert);
+  render();
+  return true;
+}
+
+A.pastePayment = async () => {
+  const text = await readClipboard();
+  if (text == null) { openSheet('paste'); return; }
+  if (!text.trim()) { toast('No hay nada copiado. Paga con Apple Pay y vuelve a intentarlo.', true); return; }
+  if (!(await importPayments(text))) { openAdd(text.trim().slice(0, 240)); toast('No era un pago de Apple Pay: revisa lo que entendí.', true); }
+};
+
+A.pasteInAdd = async () => {
+  const sh = topSheet();
+  const text = await readClipboard();
+  if (text == null) { toast('Mantén presionado el cuadro de texto y toca Pegar.', true); $('#smart')?.focus(); return; }
+  const pay = L.parsePayments(text)[0];
+  if (pay) {
+    if (state.pasted[pay.key]) toast('Ojo: ese pago ya lo registraste.', true);
+    Object.assign(sh.st, { kind: pay.kind, amount: pay.amount, catId: pay.categoryId, note: pay.note, date: toInputDate(pay.date),
+      time: pay.date, source: 'applepay', pasted: { key: pay.key, card: pay.card }, accountId: paymentAccount(pay), acctTouched: true });
+    const el = sheetEl(sh);
+    el.querySelector('#amount').value = M.groupDigits(M.rawFromValue(pay.amount, pay.currency || sh.st.currency));
+    el.querySelector('#note').value = pay.note;
+    el.querySelector('#date').value = sh.st.date;
+    if (pay.currency && pay.currency !== sh.st.currency) { el.querySelector('select[data-ch="addCurrency"]').value = pay.currency; setCurrency(sh, pay.currency); }
+    SHEETS.add.update(sh);
+  } else if (text.trim()) {
+    const ta = $('#smart'); ta.value = text.trim().slice(0, 240); sh.st.smart = ta.value; autoGrow(ta); SHEETS.add.parse(sh);
+  } else toast('No hay nada copiado.', true);
+};
+
+SHEETS.paste = {
+  html: () => `${head('Pegar pago', '<button class="link bold" data-act="pasteSubmit">Registrar</button>')}<div class="sh-body">
+    <p class="foot-note" style="margin:0 4px 12px">Mantén presionado el cuadro y toca <b>Pegar</b>.</p>
+    <section class="card"><textarea id="pasteBox" class="paste-box" rows="4" placeholder="RINDE|$ 18.000|Starbucks|Visa"></textarea></section></div>`,
+  mounted: (sh, el) => setTimeout(() => el.querySelector('#pasteBox')?.focus(), 350),
+};
+A.pasteSubmit = async () => {
+  const text = $('#pasteBox')?.value || '';
+  closeSheet();
+  if (!text.trim()) return;
+  if (!(await importPayments(text))) setTimeout(() => openAdd(text.trim().slice(0, 240)), 340);
+};
+
+A.openApplePay = () => openSheet('applepay');
+SHEETS.applepay = {
+  html: () => `${head('Pagos con Apple Pay', done, '<span></span>')}<div class="sh-body">
+    <section class="card center-text"><div class="emoji-big">📲</div><h3>Registra tus pagos casi solos</h3>
+      <p class="muted small">Cada vez que pagues con Apple Pay, tu iPhone copia el pago. Luego abres Rinde, tocas <b>Pegar pago de Apple Pay</b> y queda registrado con el comercio, la categoría y la cuenta.</p></section>
+    <small class="muted b pad-x">Configúralo una sola vez en la app Atajos</small>
+    <section class="card steps-list">
+      <p><b>1.</b> Abre <b>Atajos</b> → pestaña <b>Automatización</b> → botón <b>＋</b>.</p>
+      <p><b>2.</b> Elige <b>Transacción</b>, marca tus tarjetas, selecciona <b>Ejecutar inmediatamente</b> y toca <b>Siguiente</b>.</p>
+      <p><b>3.</b> Toca <b>Nuevo atajo en blanco</b> y agrega la acción <b>Texto</b>.</p>
+      <p><b>4.</b> En el texto escribe <b>RINDE|</b> y, separados por <b>|</b>, inserta tres datos de la transacción:</p>
+      <div class="code-line"><span>RINDE|</span><i>Importe</i><span>|</span><i>Comercio</i><span>|</span><i>Tarjeta</i></div>
+      <p class="muted small">Para insertar un dato toca <b>Entrada del atajo</b> encima del teclado; después toca la palabra que quedó en el texto y elige Importe, Comercio o Tarjeta. Los nombres pueden variar un poco según tu versión de iOS.</p>
+      <p><b>5.</b> Agrega la acción <b>Copiar al portapapeles</b>.</p>
+      <p><b>6.</b> (Opcional) Agrega <b>Mostrar notificación</b> con el texto “Pago copiado: regístralo en Rinde”.</p></section>
+    <section class="card"><h3>Consejos</h3>
+      <p class="muted small">• Si el nombre de la tarjeta dice el banco (Bancolombia, Davivienda, Nequi), Rinde elige la cuenta solo. Si pone otra, corrígela una vez y la recordará para esa tarjeta.</p>
+      <p class="muted small">• El portapapeles guarda solo el último pago: regístralo antes de volver a pagar.</p>
+      <p class="muted small">• (Opcional) Al final del texto agrega <b>|</b> y <b>Fecha actual</b> con formato ISO 8601 para guardar la hora exacta aunque lo registres más tarde.</p>
+      <p class="muted small">• También puedes pegar el mensaje de compra que te manda el banco: Rinde intenta entenderlo.</p></section>
+    <button class="primary" data-act="applePayReady">Ya lo configuré</button></div>`,
+};
+A.applePayReady = () => { S().applePay = true; commit('Listo: en el inicio verás “Pegar pago de Apple Pay”'); closeSheet(); };
 A.addCat = (d) => { const sh = topSheet(); sh.st.catId = d.id; SHEETS.add.update(sh); navigator.vibrate?.(8); };
 A.addShowAll = () => { const sh = topSheet(); sh.st.showAll = true; SHEETS.add.update(sh); };
 A.clearSmart = () => { const sh = topSheet(); sh.st.smart = ''; sh.st.parsed = []; const ta = $('#smart'); ta.value = ''; autoGrow(ta); SHEETS.add.update(sh); ta.focus(); };
@@ -933,9 +1038,15 @@ A.saveAdd = async () => {
       const rate = st.currency === cur() ? 1 : st.rate || 1;
       Object.assign(m, { amount: st.amount, kind: st.kind, catId, note, date: date.toISOString(), tags, currency: st.currency, rate, main: st.amount * rate,
         accountId: st.accountId || null });
+      if (m.card && m.accountId) S().cardAccounts = { ...(S().cardAccounts || {}), [P.key(m.card)]: m.accountId };
       commit('Cambios guardados');
     } else {
       const m = L.addMovement({ amount: st.amount, kind: st.kind, catId, note, date, tags, currency: st.currency, rate: st.rate, source: st.source, accountId: st.accountId });
+      if (st.pasted) {
+        L.markPasted(st.pasted.key);
+        if (st.pasted.card) m.card = st.pasted.card;
+        if (st.pasted.card && m.accountId) S().cardAccounts = { ...(S().cardAccounts || {}), [P.key(st.pasted.card)]: m.accountId };
+      }
       alert = L.budgetAlert(m);
       commit(alert || `${st.kind === 'expense' ? 'Gasto' : 'Ingreso'} guardado · ${M.fmt(st.amount, st.currency, { isMain: st.currency === cur() })}`, !!alert);
     }
@@ -1184,6 +1295,7 @@ SHEETS.settings = {
         <label class="frow"><span class="grow">Apariencia</span><select data-ch="setTheme">${[['auto', 'Automática'], ['light', 'Clara'], ['dark', 'Oscura']].map(([k, l]) => `<option value="${k}" ${k === s.theme ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <button class="frow" data-act="openCategories"><span class="grow">Categorías</span>${icon('right', 'muted')}</button>
         <button class="frow" data-act="openAccounts"><span class="grow">Cuentas</span>${icon('right', 'muted')}</button>
+        <button class="frow" data-act="openApplePay"><span class="grow">Pagos con Apple Pay</span>${icon('right', 'muted')}</button>
       </section>
       <small class="muted b pad-x">Privacidad</small>
       <section class="card form">

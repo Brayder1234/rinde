@@ -115,6 +115,14 @@ export function accountMatchers() {
 }
 
 export const parseText = (text) => P.parse(text, matchers(), state.learned, new Date(), accountMatchers());
+export const parsePayments = (text) => P.parseWalletPayments(text, matchers(), state.learned, accountMatchers());
+
+/** Marca un pago de Apple Pay como registrado (guarda los últimos 300). */
+export function markPasted(k) {
+  state.pasted[k] = Date.now();
+  const keys = Object.keys(state.pasted);
+  if (keys.length > 300) keys.sort((a, b) => state.pasted[a] - state.pasted[b]).slice(0, keys.length - 300).forEach((x) => delete state.pasted[x]);
+}
 
 export function learn(note, catId) {
   const k = P.key(note);

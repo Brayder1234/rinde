@@ -484,6 +484,35 @@ export function parse(text, matchers, learned = {}, now = new Date(), accounts =
   return entries.filter((e) => e.amount != null || e.note || e.categoryId || e.tags.length || e.accountId);
 }
 
+// ---------------------------------------------------------------- Pagos de Apple Pay (Atajos)
+
+/**
+ * Líneas que copia la automatización de Atajos al pagar con Apple Pay:
+ *   RINDE|<importe>|<comercio>|<tarjeta>|<fecha ISO opcional>
+ * Devuelve un movimiento por línea válida; `key` es la línea exacta (para no registrarla dos veces).
+ */
+export function parseWalletPayments(text, matchers, learned = {}, accounts = [], now = new Date()) {
+  const out = [];
+  for (const raw of String(text || '').split(/\r?\n/)) {
+    const line = raw.trim();
+    const parts = line.split('|').map((x) => x.trim());
+    if (parts.length < 3 || key(parts[0]) !== 'rinde') continue;
+    const [, rawAmount, merchant = '', card = '', rawDate = ''] = parts;
+    const best = pickBest(amountCandidates(aligned(rawAmount).norm));
+    if (!best || !(best.value > 0)) continue;
+    const refund = /^[^\d]*[-−]/.test(rawAmount);
+    const kind = refund ? 'income' : 'expense';
+    const cat = detectCategory(key(merchant), matchers, learned, kind);
+    const acc = detectAccount(key(card), accounts) || detectAccount(key(merchant), accounts);
+    const t = Date.parse(rawDate);
+    const date = Number.isFinite(t) && t <= now.getTime() + 60e3 ? new Date(t) : now;
+    const name = merchant || 'Pago con Apple Pay';
+    out.push({ key: line, amount: best.value, currency: best.currency, kind, categoryId: cat ? cat.id : null,
+      accountId: acc ? acc.id : null, date, note: refund ? `Devolución ${name}` : name, card });
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- Recibos
 
 const RECEIPT_AMOUNT = "(?<![\\p{L}\\p{N}.,])\\$?\\s?(\\d{1,3}(?:[.,]\\d{3})+(?:[.,]\\d{1,2})?|\\d+[.,]\\d{2}|\\d{3,})(?![\\p{N}])";
