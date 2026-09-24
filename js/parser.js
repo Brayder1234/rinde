@@ -414,14 +414,41 @@ export function split(text) {
   return groups.map(([s, l]) => orig.slice(s, s + l).trim()).filter(Boolean);
 }
 
+// ---------------------------------------------------------------- Cuentas
+
+// "con nequi", "desde mi cuenta de bancolombia", "a mi nequi", "en efectivo", "tarjeta davivienda"
+const ACCOUNT_LEAD = '(?:(?:con|por|desde|de|del|en|a|al|via|para)\\s+)?(?:(?:mi|la|el)\\s+)?(?:(?:cuenta|tarjeta|app)\\s+(?:de\\s+)?)?';
+const escapeRx = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** accounts: [{id, keywords:[normalizadas]}] → {id, start, length} de la cuenta mencionada. */
+export function detectAccount(norm, accounts = []) {
+  let best = null;
+  for (const a of accounts) {
+    for (const k of a.keywords) {
+      if (!k) continue;
+      const kw = k.split(' ').map(escapeRx).join('\\s+');
+      for (const m of allMatches(`(?<![\\p{L}\\p{N}])${ACCOUNT_LEAD}${kw}(?![\\p{L}\\p{N}])`, norm)) {
+        if (!best || k.length > best.klen) best = { id: a.id, klen: k.length, start: m.index, length: m[0].length };
+      }
+    }
+  }
+  return best;
+}
+
 // ---------------------------------------------------------------- API
 
-function parseSegment(text, matchers, learned, now) {
+function parseSegment(text, matchers, learned, now, accounts) {
   const cur = new TextCursor(text);
-  const fullNorm = cur.normalized;
-  const e = { amount: null, kind: detectKind(fullNorm), categoryId: null, date: null, note: '', tags: [], currency: null, hadMultiplier: false };
+  let fullNorm = cur.normalized;
+  const e = { amount: null, kind: detectKind(fullNorm), categoryId: null, date: null, note: '', tags: [], currency: null, hadMultiplier: false, accountId: null };
   const d = detectDate(cur, now);
   if (d) { e.date = d.date; cur.remove(d.start, d.length); }
+  const acc = detectAccount(cur.normalized, accounts);
+  if (acc) {
+    e.accountId = acc.id;
+    cur.remove(acc.start, acc.length);
+    fullNorm = fullNorm.slice(0, acc.start) + ' '.repeat(acc.length) + fullNorm.slice(acc.start + acc.length);
+  }
   const best = pickBest(amountCandidates(cur.normalized));
   if (best) {
     e.amount = best.value;
@@ -437,13 +464,15 @@ function parseSegment(text, matchers, learned, now) {
 }
 
 /** Devuelve una lista de movimientos (normalmente uno). */
-export function parse(text, matchers, learned = {}, now = new Date()) {
+export function parse(text, matchers, learned = {}, now = new Date(), accounts = []) {
   const trimmed = (text || '').trim();
   if (!trimmed) return [];
   const { tags, rest } = extractTags(trimmed);
-  const entries = split(rest).map((seg) => parseSegment(seg, matchers, learned, now));
+  const entries = split(rest).map((seg) => parseSegment(seg, matchers, learned, now, accounts));
   const shared = entries.find((e) => e.date)?.date;
   if (shared) for (const e of entries) if (!e.date) e.date = shared;
+  const sharedAcc = entries.find((e) => e.accountId)?.accountId;
+  if (sharedAcc) for (const e of entries) if (!e.accountId) e.accountId = sharedAcc;
   let lastThousands = false;
   for (const e of entries) {
     if (e.amount != null) {
@@ -452,7 +481,7 @@ export function parse(text, matchers, learned = {}, now = new Date()) {
     }
   }
   for (const e of entries) e.tags = tags;
-  return entries.filter((e) => e.amount != null || e.note || e.categoryId || e.tags.length);
+  return entries.filter((e) => e.amount != null || e.note || e.categoryId || e.tags.length || e.accountId);
 }
 
 // ---------------------------------------------------------------- Recibos

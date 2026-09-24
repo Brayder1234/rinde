@@ -10,7 +10,7 @@ import { $, $$, esc, cur, money, compactMoney, icon, catIcon, toInputDate, fromI
 const S = () => state.settings;
 const ui = {
   tab: 'home', sheets: [], mvOffset: 0, anOffset: 0,
-  filter: { kind: null, cat: null, tag: null, q: '' },
+  filter: { kind: null, cat: null, tag: null, acct: null, q: '' },
   anKind: 'expense', evoCat: null, plans: 'budgets', onb: { step: 0, q: '' },
 };
 const A = {};   // acciones de botones (data-act)
@@ -23,6 +23,13 @@ const EMOJIS = ['🍽️', '☕', '🍔', '🍕', '🍺', '🛒', '🥦', '🚗'
   '💰', '💼', '💵', '📈', '🪙', '🏖️', '⭐', '❤️', '🛡️', '🧹', '🧺', '🚿', '🌱', '🐔', '🥐', '🍎', '🍷', '🚲', '🛵', '🧸'];
 const COLORS = ['#EF4444', '#F97316', '#F59E0B', '#EAB308', '#84CC16', '#22C55E', '#10B981', '#0E9F6E', '#14B8A6', '#06B6D4',
   '#0EA5E9', '#3B82F6', '#6366F1', '#8B5CF6', '#A855F7', '#D946EF', '#EC4899', '#F43F5E', '#B45309', '#A16207', '#78716C', '#64748B'];
+
+const ACCT_EMOJIS = ['🏦', '🏠', '📱', '💵', '💳', '👛', '💰', '🪙', '🐷', '📈', '💼', '🏧', '💸', '🧾', '⭐', '🛡️'];
+const acctBadge = (a, size = 36) => catIcon(a || { icon: '💳', color: '#94A3B8' }, size);
+function defaultAcct(kind) {
+  const a = L.acctById(S().lastAccount?.[kind]);
+  return a && !a.archived ? a.id : null;
+}
 
 // ================================================================ Arranque
 
@@ -164,12 +171,37 @@ function viewHome() {
     </div>
     ${pending.length ? `<button class="card row-card" data-act="openPending">${icon('clock', 'orange big')}<span class="grow"><b>${pending.length === 1 ? 'Tienes 1 pago por revisar' : `Tienes ${pending.length} pagos por revisar`}</b><small>${esc(pending.slice(0, 3).map((r) => r.title).join(', '))}</small></span>${icon('right', 'muted')}</button>` : ''}
     ${!state.movements.length ? welcomeCard() : `
+      ${accountsCard(ms)}
       ${s.spent > 0 ? donutCard(ms) : ''}
       ${budgetWatch(ms)}
       ${goalsPreview()}
       <section class="card"><div class="sec-title"><h3>Últimos movimientos</h3><button class="link" data-act="tab" data-tab="movements">Ver todos</button></div>
         <div class="list">${recent.map((m) => movementRow(m, true)).join('')}</div></section>
       ${backupReminder()}`}`;
+}
+
+/** Filas por cuenta: cuánto entró y salió en el periodo, y el saldo si se conoce. */
+function accountRows(ms, off = 0, withBalance = true) {
+  const flow = L.accountFlow(ms);
+  const detail = (f) => [f.in ? `<span class="green">Entró ${money(f.in)}</span>` : '', f.out ? `<span class="red">Salió ${money(f.out)}</span>` : '']
+    .filter(Boolean).join(' · ') || 'Sin movimientos';
+  const rows = L.activeAccounts().map((a) => {
+    const f = flow.get(a.id) || { in: 0, out: 0, count: 0 };
+    const bal = withBalance ? L.accountBalance(a) : null;
+    const right = bal != null ? `${money(bal)}<small>Saldo</small>` : f.count ? `${money(f.in - f.out, { signed: true })}<small>Neto</small>` : '';
+    return `<button class="row" data-act="openAccount" data-id="${a.id}" data-off="${off}">${acctBadge(a)}
+      <span class="grow"><b>${esc(a.name)}</b><small>${detail(f)}</small></span><span class="amt">${right}</span></button>`;
+  });
+  const none = flow.get('');
+  if (none) rows.push(`<button class="row" data-act="openAccount" data-id="" data-off="${off}">${acctBadge(null)}
+    <span class="grow"><b>Sin cuenta</b><small>${none.count === 1 ? '1 movimiento' : `${none.count} movimientos`} · toca para asignar</small></span>
+    <span class="amt">${money(none.in - none.out, { signed: true })}</span></button>`);
+  return rows.join('');
+}
+
+function accountsCard(ms) {
+  return `<section class="card list"><div class="sec-title" style="padding-top:8px"><h3>Tus cuentas</h3><button class="link" data-act="openAccounts">Editar</button></div>
+    ${accountRows(ms)}</section>`;
 }
 
 function installCard() {
@@ -280,6 +312,8 @@ function movementRow(m, showDate = false) {
   const title = m.note || c?.name || (m.kind === 'expense' ? 'Gasto' : 'Ingreso');
   const parts = [];
   if (m.note && c) parts.push(c.name);
+  const acct = L.acctById(m.accountId);
+  if (acct) parts.push(acct.name);
   if (showDate) parts.push(shortDate(L.md(m)));
   if (m.source === 'recurring') parts.push('Recurrente');
   const sign = m.kind === 'expense' ? -1 : 1;
@@ -311,6 +345,7 @@ function filteredMovements() {
     if (f.kind && m.kind !== f.kind) return false;
     if (f.cat && m.catId !== f.cat) return false;
     if (f.tag && !(m.tags || []).includes(f.tag)) return false;
+    if (f.acct && (f.acct === 'none' ? !!L.acctById(m.accountId) : m.accountId !== f.acct)) return false;
     if (q) {
       const hay = P.key(`${m.note} ${L.catById(m.catId)?.name ?? ''} ${(m.tags || []).join(' ')} ${m.amount}`);
       return hay.includes(q);
@@ -344,10 +379,11 @@ function viewMovements() {
     <label class="search">${icon('search')}<input type="search" placeholder="Buscar: nota, categoría, #etiqueta" value="${esc(f.q)}" data-in="mvSearch"></label>
     ${f.q ? '' : `<section class="card pad-s">${periodNav(ui.mvOffset, 'mvPeriod')}</section>`}
     <div class="chips scroll">
-      ${chip('Todos', !f.kind && !f.cat && !f.tag, 'mvFilter', 'data-k="all"')}
+      ${chip('Todos', !f.kind && !f.cat && !f.tag && !f.acct, 'mvFilter', 'data-k="all"')}
       ${chip('Gastos', f.kind === 'expense', 'mvFilter', 'data-k="expense"')}
       ${chip('Ingresos', f.kind === 'income', 'mvFilter', 'data-k="income"')}
       <select class="chip ${f.cat ? 'on' : ''}" data-ch="mvCat"><option value="">Categoría</option>${L.activeCats().map((c) => `<option value="${c.id}" ${f.cat === c.id ? 'selected' : ''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select>
+      <select class="chip ${f.acct ? 'on' : ''}" data-ch="mvAcct"><option value="">Cuenta</option>${L.activeAccounts().map((a) => `<option value="${a.id}" ${f.acct === a.id ? 'selected' : ''}>${a.icon} ${esc(a.name)}</option>`).join('')}<option value="none" ${f.acct === 'none' ? 'selected' : ''}>Sin cuenta</option></select>
       ${tags.length ? `<select class="chip ${f.tag ? 'on' : ''}" data-ch="mvTag"><option value="">Etiqueta</option>${tags.map((t) => `<option value="${esc(t)}" ${f.tag === t ? 'selected' : ''}>#${esc(t)}</option>`).join('')}</select>` : ''}
     </div>
     <div id="mvList">${movementsList()}</div>`;
@@ -355,12 +391,13 @@ function viewMovements() {
 
 A.mvPeriod = (d) => { ui.mvOffset = d.d === '0' ? 0 : Math.min(ui.mvOffset + Number(d.d), 0); render(); };
 A.mvFilter = (d) => {
-  if (d.k === 'all') ui.filter = { ...ui.filter, kind: null, cat: null, tag: null };
+  if (d.k === 'all') ui.filter = { ...ui.filter, kind: null, cat: null, tag: null, acct: null };
   else ui.filter.kind = ui.filter.kind === d.k ? null : d.k;
   render();
 };
 CH.mvCat = (el) => { ui.filter.cat = el.value || null; render(); };
 CH.mvTag = (el) => { ui.filter.tag = el.value || null; render(); };
+CH.mvAcct = (el) => { ui.filter.acct = el.value || null; render(); };
 IN.mvSearch = (el) => { ui.filter.q = el.value; $('#mvList').innerHTML = movementsList(); };
 
 // ================================================================ Análisis
@@ -400,6 +437,7 @@ function viewAnalysis() {
         <span class="grow"><span class="split"><b>${esc(x.name)}</b><b>${money(x.total)}</b></span>
         <span class="split">${bar(x.total / sliceTotal, x.color).replace('class="bar"', 'class="bar thin"')}<small class="muted pct">${Math.round((x.total / sliceTotal) * 100)} %</small></span></span></button>`).join('')}`}
     </section>
+    ${ms.length ? `<section class="card list"><div class="sec-title" style="padding-top:8px"><h3>Por cuenta</h3></div>${accountRows(ms, ui.anOffset, false)}</section>` : ''}
     <section class="card"><h3>Últimos 6 periodos</h3>
       ${C.bars(trend.map((t) => ({ label: M.periodShort(t.p), values: [t.spent, t.income] })), ['#EF4444', '#16A34A'], fmtAxis)}
       <div class="legend-inline"><span><i style="background:#EF4444"></i>Gastos</span><span><i style="background:#16A34A"></i>Ingresos</span></div></section>
@@ -554,10 +592,11 @@ SHEETS.add = {
     const m = editId && state.movements.find((x) => x.id === editId);
     if (m) {
       return { editId, kind: m.kind, smart: '', amount: m.amount, catId: m.catId, note: m.note, date: toInputDate(L.md(m)),
+        accountId: L.acctById(m.accountId) ? m.accountId : null, acctTouched: true,
         tags: (m.tags || []).map((t) => '#' + t).join(' '), currency: m.currency, rate: m.rate, parsed: [], source: m.source, time: L.md(m) };
     }
     return { kind: 'expense', smart: prefill || '', amount: 0, catId: null, note: '', date: toInputDate(new Date()), tags: '',
-      currency: cur(), rate: 1, parsed: [], source: 'manual', showAll: false };
+      currency: cur(), rate: 1, parsed: [], source: 'manual', showAll: false, accountId: defaultAcct('expense'), acctTouched: false };
   },
   html(sh) {
     const st = sh.st;
@@ -586,6 +625,7 @@ SHEETS.add = {
           <div id="rateRow"></div>
         </section>
         <section class="card"><small class="muted b">Categoría</small><div class="cat-grid" id="catGrid"></div></section>
+        <section class="card"><small class="muted b" id="acctLabel"></small><div class="acct-grid" id="acctGrid"></div></section>
         <section class="card form">
           <label class="frow"><span>📝</span><input id="note" placeholder="Descripción (opcional)" value="${esc(st.note)}" data-in="field" data-f="note"></label>
           <label class="frow"><span>📅</span><input id="date" type="date" value="${st.date}" max="${toInputDate(new Date(Date.now() + 366 * 864e5))}" data-ch="field" data-in="field" data-f="date"></label>
@@ -614,6 +654,8 @@ SHEETS.add = {
     const first = st.parsed[0];
     if (first && st.parsed.length === 1) {
       if (first.kind) st.kind = first.kind;
+      if (first.accountId) { st.accountId = first.accountId; st.acctTouched = true; }
+      else if (!st.acctTouched) st.accountId = defaultAcct(st.kind) ?? st.accountId;
       if (first.amount != null) {
         st.amount = first.amount;
         if (first.currency && first.currency !== st.currency) setCurrency(sh, first.currency);
@@ -651,6 +693,8 @@ SHEETS.add = {
         const chips = [];
         if (f.amount != null) chips.push(`💲 ${money(f.amount, { code: f.currency || st.currency, force: true })}`);
         if (c) chips.push(`${c.icon} ${esc(c.name)}`);
+        const fa = L.acctById(f.accountId);
+        if (fa) chips.push(`${fa.icon} ${esc(fa.name)}`);
         if (f.date) chips.push(`📅 ${esc(dayLabel(f.date))}`);
         if (f.kind === 'income') chips.push('⬇️ Ingreso');
         f.tags.forEach((t) => chips.push(`#${esc(t)}`));
@@ -662,7 +706,7 @@ SHEETS.add = {
       const list = st.parsed.filter((e) => e.amount != null);
       el.querySelector('#multi').innerHTML = `<section class="card"><h3>${icon('stack', 'inline brand')} Detecté ${list.length} movimientos</h3>
         ${list.map((e) => { const c = L.catById(e.categoryId) || L.fallbackCategory(e.kind || st.kind);
-          return `<div class="row">${catIcon(c, 34)}<span class="grow"><b>${esc(e.note || c?.name || 'Movimiento')}</b><small>${esc([c?.name, e.date ? dayLabel(e.date) : null].filter(Boolean).join(' · '))}</small></span>
+          return `<div class="row">${catIcon(c, 34)}<span class="grow"><b>${esc(e.note || c?.name || 'Movimiento')}</b><small>${esc([c?.name, L.acctById(e.accountId || st.accountId)?.name, e.date ? dayLabel(e.date) : null].filter(Boolean).join(' · '))}</small></span>
           <b class="${(e.kind || st.kind) === 'income' ? 'green' : ''}">${money(e.amount, { code: e.currency || cur(), force: true })}</b></div>`; }).join('')}
         <p class="muted small">Puedes editarlos luego desde Movimientos.</p></section>`;
     }
@@ -681,6 +725,10 @@ SHEETS.add = {
     el.querySelector('#catGrid').innerHTML = visible.map((c) => `<button class="cat ${c.id === st.catId ? 'on' : ''}" data-act="addCat" data-id="${c.id}" style="--c:${c.color}">
         <span class="cat-dot">${c.icon}</span><small>${esc(c.name)}</small></button>`).join('') +
       (!st.showAll && cats.length > 8 ? '<button class="cat" data-act="addShowAll"><span class="cat-dot more">•••</span><small>Ver todas</small></button>' : '');
+    // Cuenta
+    el.querySelector('#acctLabel').textContent = st.kind === 'expense' ? '¿De dónde salió la plata?' : '¿A dónde entró la plata?';
+    el.querySelector('#acctGrid').innerHTML = L.activeAccounts().map((a) => `<button class="acct ${a.id === st.accountId ? 'on' : ''}" data-act="addAcct" data-id="${a.id}" style="--c:${a.color}">
+        <span>${a.icon}</span>${esc(a.name)}</button>`).join('') + '<button class="acct add" data-act="newAccountFromAdd">＋ Cuenta</button>';
     // Frecuentes
     const fr = !st.editId && !st.amount && !st.smart ? L.frequent(st.kind) : [];
     el.querySelector('#frequent').innerHTML = fr.length ? `<small class="muted b pad-x">Frecuentes</small><div class="chips scroll">${fr.map((f, i) => {
@@ -714,13 +762,26 @@ IN.addAmount = (el) => {
   SHEETS.add.update(sh);
 };
 IN.addRate = (el) => { const sh = topSheet(); sh.st.rate = Number(el.value.replace(',', '.')) || 0; };
-A.addKind = (d) => { const sh = topSheet(); sh.st.kind = d.k; SHEETS.add.update(sh); };
+A.addKind = (d) => {
+  const sh = topSheet(); sh.st.kind = d.k;
+  if (!sh.st.acctTouched) sh.st.accountId = defaultAcct(d.k) ?? sh.st.accountId;
+  SHEETS.add.update(sh);
+};
+A.addAcct = (d) => {
+  const sh = topSheet();
+  sh.st.accountId = sh.st.accountId === d.id ? null : d.id;
+  sh.st.acctTouched = true;
+  SHEETS.add.update(sh);
+  navigator.vibrate?.(8);
+};
+A.newAccountFromAdd = () => openSheet('acctEdit', { fromAdd: true });
 A.addCat = (d) => { const sh = topSheet(); sh.st.catId = d.id; SHEETS.add.update(sh); navigator.vibrate?.(8); };
 A.addShowAll = () => { const sh = topSheet(); sh.st.showAll = true; SHEETS.add.update(sh); };
 A.clearSmart = () => { const sh = topSheet(); sh.st.smart = ''; sh.st.parsed = []; const ta = $('#smart'); ta.value = ''; autoGrow(ta); SHEETS.add.update(sh); ta.focus(); };
 A.addFrequent = (d) => {
   const sh = topSheet(); const f = sh.frequent[Number(d.i)];
   Object.assign(sh.st, { amount: f.amount, catId: f.catId, note: f.title, source: 'frequent' });
+  if (L.acctById(f.accountId)) Object.assign(sh.st, { accountId: f.accountId, acctTouched: true });
   const el = sheetEl(sh);
   el.querySelector('#amount').value = M.groupDigits(M.rawFromValue(f.amount, sh.st.currency));
   el.querySelector('#note').value = f.title;
@@ -806,7 +867,7 @@ A.saveAdd = async () => {
       let rate = 1;
       if (e.currency && e.currency !== cur()) rate = (await L.exchangeRate(e.currency, cur())) || 1;
       const m = L.addMovement({ amount: e.amount, kind: e.kind || st.kind, catId: e.categoryId, note: e.note, date: e.date || new Date(),
-        tags: e.tags, currency: e.currency || cur(), rate, source: st.source });
+        tags: e.tags, currency: e.currency || cur(), rate, source: st.source, accountId: e.accountId || st.accountId });
       alert = L.budgetAlert(m) || alert;
       n++;
     }
@@ -820,15 +881,17 @@ A.saveAdd = async () => {
     if (st.editId) {
       const m = state.movements.find((x) => x.id === st.editId);
       const rate = st.currency === cur() ? 1 : st.rate || 1;
-      Object.assign(m, { amount: st.amount, kind: st.kind, catId, note, date: date.toISOString(), tags, currency: st.currency, rate, main: st.amount * rate });
+      Object.assign(m, { amount: st.amount, kind: st.kind, catId, note, date: date.toISOString(), tags, currency: st.currency, rate, main: st.amount * rate,
+        accountId: st.accountId || null });
       commit('Cambios guardados');
     } else {
-      const m = L.addMovement({ amount: st.amount, kind: st.kind, catId, note, date, tags, currency: st.currency, rate: st.rate, source: st.source });
+      const m = L.addMovement({ amount: st.amount, kind: st.kind, catId, note, date, tags, currency: st.currency, rate: st.rate, source: st.source, accountId: st.accountId });
       alert = L.budgetAlert(m);
       commit(alert || `${st.kind === 'expense' ? 'Gasto' : 'Ingreso'} guardado · ${M.fmt(st.amount, st.currency, { isMain: st.currency === cur() })}`, !!alert);
     }
     if (note && catId) { L.learn(note, catId); save(); }
   }
+  if (st.accountId && st.acctTouched) { S().lastAccount = { ...(S().lastAccount || {}), [st.kind]: st.accountId }; save(); }
   closeSheet();
 };
 
@@ -968,12 +1031,12 @@ A.ruleFromSuggestion = (d) => openSheet('rule', { sug: L.suggestions()[Number(d.
 SHEETS.rule = {
   init: ({ id, sug }) => {
     const r = id && state.rules.find((x) => x.id === id);
-    if (r) return { title: r.title, amount: r.amount, kind: r.kind, catId: r.catId, freq: r.freq, start: toInputDate(new Date(r.start)), auto: r.auto, active: r.active };
+    if (r) return { title: r.title, amount: r.amount, kind: r.kind, catId: r.catId, freq: r.freq, start: toInputDate(new Date(r.start)), auto: r.auto, active: r.active, accountId: r.accountId || '' };
     if (sug) {
       const next = M.occurrence(sug.freq, 1, sug.last);
-      return { title: sug.title, amount: sug.amount, kind: 'expense', catId: sug.catId, freq: sug.freq, start: toInputDate(next), auto: true, active: true };
+      return { title: sug.title, amount: sug.amount, kind: 'expense', catId: sug.catId, freq: sug.freq, start: toInputDate(next), auto: true, active: true, accountId: sug.accountId || '' };
     }
-    return { title: '', amount: 0, kind: 'expense', catId: '', freq: 'monthly', start: toInputDate(new Date()), auto: true, active: true };
+    return { title: '', amount: 0, kind: 'expense', catId: '', freq: 'monthly', start: toInputDate(new Date()), auto: true, active: true, accountId: defaultAcct('expense') || '' };
   },
   html: (sh) => {
     const st = sh.st; const edit = !!sh.props.id;
@@ -984,7 +1047,9 @@ SHEETS.rule = {
         <label class="frow"><input placeholder="Nombre (ej: Arriendo, Netflix)" value="${esc(st.title)}" data-in="field" data-f="title"></label>
         <label class="frow"><span class="grow">Monto</span>${amountInput('amount', st.amount, cur(), 'inline-amount')}</label>
         <label class="frow"><span class="grow">Categoría</span><select data-ch="field" data-f="catId"><option value="">Sin categoría</option>
-          ${L.activeCats(st.kind).map((c) => `<option value="${c.id}" ${c.id === st.catId ? 'selected' : ''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></label></section>
+          ${L.activeCats(st.kind).map((c) => `<option value="${c.id}" ${c.id === st.catId ? 'selected' : ''}>${c.icon} ${esc(c.name)}</option>`).join('')}</select></label>
+        <label class="frow"><span class="grow">${st.kind === 'expense' ? 'Sale de' : 'Entra a'}</span><select data-ch="field" data-f="accountId"><option value="">Sin cuenta</option>
+          ${L.activeAccounts().map((a) => `<option value="${a.id}" ${a.id === st.accountId ? 'selected' : ''}>${a.icon} ${esc(a.name)}</option>`).join('')}</select></label></section>
       <section class="card form">
         <label class="frow"><span class="grow">Frecuencia</span><select data-ch="field" data-f="freq">${Object.entries(M.FREQUENCIES).map(([k, f]) => `<option value="${k}" ${k === st.freq ? 'selected' : ''}>${f.title}</option>`).join('')}</select></label>
         <label class="frow"><span class="grow">${edit ? 'Desde' : 'Primer pago'}</span><input type="date" value="${st.start}" data-ch="field" data-in="field" data-f="start"></label></section>
@@ -1004,7 +1069,7 @@ A.saveRule = () => {
   if (sh.props.id) {
     const r = state.rules.find((x) => x.id === sh.props.id);
     const changed = r.freq !== st.freq || toInputDate(new Date(r.start)) !== st.start;
-    Object.assign(r, { title: st.title.trim(), amount: st.amount, kind: st.kind, catId: st.catId || null, auto: st.auto, active: st.active });
+    Object.assign(r, { title: st.title.trim(), amount: st.amount, kind: st.kind, catId: st.catId || null, auto: st.auto, active: st.active, accountId: st.accountId || null });
     if (changed) {
       Object.assign(r, { freq: st.freq, start: start.toISOString(), count: 0 });
       const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -1012,10 +1077,10 @@ A.saveRule = () => {
     }
   } else {
     state.rules.push({ id: uid(), title: st.title.trim(), amount: st.amount, kind: st.kind, catId: st.catId || null, freq: st.freq,
-      start: start.toISOString(), count: 0, active: true, auto: st.auto });
+      start: start.toISOString(), count: 0, active: true, auto: st.auto, accountId: st.accountId || null });
   }
   const n = L.processRecurring();
-  commit(n ? `Guardado · se registraron ${n} pagos` : 'Pago recurrente guardado');
+  commit(n ? `Guardado · se ${n === 1 ? 'registró 1 pago' : `registraron ${n} pagos`}` : 'Pago recurrente guardado');
   closeSheet();
 };
 A.deleteRule = () => {
@@ -1068,6 +1133,7 @@ SHEETS.settings = {
         <label class="frow"><span class="grow">El mes empieza el día</span><select data-ch="setCycle">${Array.from({ length: 28 }, (_, i) => `<option ${i + 1 === s.cycleDay ? 'selected' : ''}>${i + 1}</option>`).join('')}</select></label>
         <label class="frow"><span class="grow">Apariencia</span><select data-ch="setTheme">${[['auto', 'Automática'], ['light', 'Clara'], ['dark', 'Oscura']].map(([k, l]) => `<option value="${k}" ${k === s.theme ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <button class="frow" data-act="openCategories"><span class="grow">Categorías</span>${icon('right', 'muted')}</button>
+        <button class="frow" data-act="openAccounts"><span class="grow">Cuentas</span>${icon('right', 'muted')}</button>
       </section>
       <small class="muted b pad-x">Privacidad</small>
       <section class="card form">
@@ -1197,5 +1263,93 @@ A.deleteCat = () => {
 };
 
 A.openData = () => openSheet('settings');
+
+// ---------------------------------------------------------------- Cuentas
+
+A.openAccounts = () => openSheet('accounts');
+SHEETS.accounts = {
+  html: () => {
+    const archived = state.accounts.filter((a) => a.archived);
+    const row = (a) => { const b = L.accountBalance(a);
+      return `<button class="row ${a.archived ? 'dim' : ''}" data-act="editAccount" data-id="${a.id}">${acctBadge(a, 34)}<b class="grow">${esc(a.name)}</b>${b != null ? `<small class="muted">${money(b)}</small>` : ''}${icon('right', 'muted')}</button>`; };
+    return `${head('Cuentas', done, '<span></span>')}<div class="sh-body">
+      <p class="foot-note" style="margin:0 16px 14px">En cada movimiento eliges de dónde salió o a dónde entró la plata. Si le dices a Rinde cuánto tienes hoy en una cuenta, te muestra el saldo al día.</p>
+      <section class="card list">${L.activeAccounts().map(row).join('')}
+        <button class="row link" data-act="newAccount">＋ Nueva cuenta</button></section>
+      ${archived.length ? `<small class="muted b pad-x">Archivadas</small><section class="card list">${archived.map(row).join('')}</section>` : ''}</div>`;
+  },
+};
+A.editAccount = (d) => openSheet('acctEdit', { id: d.id });
+A.newAccount = () => openSheet('acctEdit', {});
+SHEETS.acctEdit = {
+  init: ({ id }) => {
+    const a = id && L.acctById(id);
+    return a ? { name: a.name, icon: a.icon, color: a.color, balance: 0, balanceTouched: false }
+      : { name: '', icon: '💳', color: '#3B82F6', balance: 0, balanceTouched: false };
+  },
+  html: (sh) => {
+    const st = sh.st; const a = sh.props.id && L.acctById(sh.props.id);
+    const bal = a ? L.accountBalance(a) : null;
+    return `${head(a ? 'Editar cuenta' : 'Nueva cuenta', '<button class="link bold" data-act="saveAccount">Guardar</button>')}<div class="sh-body">
+      <section class="card form"><label class="frow">${acctBadge(st, 48)}<input placeholder="Nombre (ej: Daviplata, Ahorros)" value="${esc(st.name)}" data-in="field" data-f="name"></label>
+        <label class="frow"><span class="grow">Saldo que tienes hoy</span>${amountInput('balance', st.balanceTouched ? st.balance : 0, cur(), 'inline-amount')}</label></section>
+      <p class="foot-note">${bal != null ? `Saldo según Rinde: <b>${money(bal)}</b>. Escribe un valor solo si quieres corregirlo.`
+        : 'Opcional. Escribe cuánto tienes hoy en esta cuenta y Rinde lo irá actualizando con cada gasto e ingreso.'}</p>
+      <small class="muted b pad-x">Ícono</small><section class="card"><div class="emoji-grid">${ACCT_EMOJIS.map((e) => `<button class="${e === st.icon ? 'on' : ''}" data-act="acctIcon" data-e="${e}">${e}</button>`).join('')}</div></section>
+      <small class="muted b pad-x">Color</small><section class="card"><div class="color-grid">${COLORS.map((x) => `<button style="background:${x}" class="${x === st.color ? 'on' : ''}" data-act="acctColor" data-c="${x}"></button>`).join('')}</div></section>
+      ${a ? `<section class="card list"><button class="row link" data-act="archiveAccount">${a.archived ? 'Reactivar cuenta' : 'Archivar cuenta'}</button>
+        <button class="row red" data-act="deleteAccount">Eliminar cuenta</button></section>
+        <p class="foot-note">Archivarla la oculta sin tocar tus movimientos. Si la eliminas, sus movimientos quedan “Sin cuenta”.</p>` : ''}</div>`;
+  },
+  changed: (sh, f) => { if (f === 'balance') sh.st.balanceTouched = true; },
+};
+A.acctIcon = (d) => { topSheet().st.icon = d.e; refreshSheet(); };
+A.acctColor = (d) => { topSheet().st.color = d.c; refreshSheet(); };
+A.saveAccount = () => {
+  const sh = topSheet(); const st = sh.st;
+  if (!st.name.trim()) { toast('Ponle un nombre a la cuenta.', true); return; }
+  let a = sh.props.id && L.acctById(sh.props.id);
+  if (a) Object.assign(a, { name: st.name.trim(), icon: st.icon, color: st.color });
+  else {
+    a = { id: uid(), key: '', name: st.name.trim(), icon: st.icon, color: st.color, initial: 0, hasBalance: false, archived: false,
+      order: Math.max(0, ...state.accounts.map((x) => x.order)) + 1 };
+    state.accounts.push(a);
+  }
+  if (st.balanceTouched) L.setAccountBalance(a, st.balance || 0);
+  const below = ui.sheets[ui.sheets.length - 2];
+  if (sh.props.fromAdd && below?.type === 'add') Object.assign(below.st, { accountId: a.id, acctTouched: true });
+  commit('Cuenta guardada');
+  closeSheet();
+};
+A.archiveAccount = () => { const a = L.acctById(topSheet().props.id); a.archived = !a.archived; commit(); closeSheet(); };
+A.deleteAccount = () => {
+  if (!confirm('¿Eliminar la cuenta? Sus movimientos se conservan, pero quedan “Sin cuenta”.')) return;
+  const id = topSheet().props.id;
+  state.accounts = state.accounts.filter((a) => a.id !== id);
+  state.movements.forEach((m) => { if (m.accountId === id) m.accountId = null; });
+  state.rules.forEach((r) => { if (r.accountId === id) r.accountId = null; });
+  commit(); closeSheet();
+};
+
+A.openAccount = (d) => openSheet('account', { id: d.id || null, off: Number(d.off || 0) });
+SHEETS.account = {
+  init: ({ off }) => ({ off }),
+  html: (sh) => {
+    const a = L.acctById(sh.props.id);
+    const p = M.shiftPeriod(L.currentPeriod(), sh.st.off);
+    const items = L.sortedMovements().filter((m) => M.inPeriod(p, L.md(m)) && (a ? m.accountId === a.id : !L.acctById(m.accountId)));
+    const bal = L.accountBalance(a);
+    return `${head(a?.name || 'Sin cuenta', done, '<span></span>')}<div class="sh-body">
+      <section class="card center-text">${acctBadge(a, 56)}
+        ${bal != null ? `<div class="big-num">${money(bal)}</div><p class="muted small">Saldo actual</p>`
+          : `<p class="muted small mt">${a ? 'Aún no le has dicho a Rinde cuánto tienes en esta cuenta.' : 'Movimientos sin cuenta. Tócalos para elegir de dónde salió o a dónde entró la plata.'}</p>`}
+        ${a ? `<button class="chip brand mt" data-act="editAccount" data-id="${a.id}">${bal != null ? 'Corregir saldo' : 'Poner saldo actual'}</button>` : ''}</section>
+      <section class="card pad-s">${periodNav(sh.st.off, 'acctPeriod')}</section>
+      <div class="tiles" style="grid-template-columns:1fr 1fr">${tile('Entró', L.total(items, 'income'), 'dn', 'green')}${tile('Salió', L.total(items, 'expense'), 'up', 'red')}</div>
+      ${items.length ? `<section class="card list">${items.map((m) => movementRow(m, true)).join('')}</section>`
+        : `<div class="empty">${icon('list', 'big')}<b>Sin movimientos</b><small>No hay movimientos en este periodo.</small></div>`}</div>`;
+  },
+};
+A.acctPeriod = (d) => { const sh = topSheet(); sh.st.off = d.d === '0' ? 0 : Math.min(sh.st.off + Number(d.d), 0); refreshSheet(sh); };
 
 boot();

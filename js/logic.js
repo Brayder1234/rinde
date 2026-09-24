@@ -1,12 +1,14 @@
 // Cálculos: periodos, disponible para gastar, gráficas, recurrentes, alertas, exportar.
 import { state, save, uid } from './store.js';
-import { SEED, FALLBACK } from './catalog.js';
+import { SEED, FALLBACK, ACCOUNT_SEED } from './catalog.js';
 import * as P from './parser.js';
 import * as M from './money.js';
 
 export const S = () => state.settings;
 export const md = (m) => new Date(m.date);
 export const catById = (id) => state.categories.find((c) => c.id === id);
+export const acctById = (id) => (id ? state.accounts.find((a) => a.id === id) : undefined);
+export const activeAccounts = () => state.accounts.filter((a) => !a.archived).sort((a, b) => a.order - b.order);
 export const activeCats = (kind) => state.categories
   .filter((c) => !c.archived && (!kind || c.kind === kind))
   .sort((a, b) => a.order - b.order);
@@ -105,7 +107,14 @@ export function matchers() {
   });
 }
 
-export const parseText = (text) => P.parse(text, matchers(), state.learned);
+export function accountMatchers() {
+  return activeAccounts().map((a) => {
+    const seed = ACCOUNT_SEED.find((s) => s.key === a.key);
+    return { id: a.id, keywords: [P.key(a.name), ...(seed ? seed.keywords : [])] };
+  });
+}
+
+export const parseText = (text) => P.parse(text, matchers(), state.learned, new Date(), accountMatchers());
 
 export function learn(note, catId) {
   const k = P.key(note);
@@ -122,15 +131,41 @@ export function fallbackCategory(kind) {
 
 // ---------------------------------------------------------------- Movimientos
 
-export function addMovement({ amount, kind, catId, note = '', date = new Date(), tags = [], currency, rate = 1, source = 'manual', ruleId = null }) {
+export function addMovement({ amount, kind, catId, note = '', date = new Date(), tags = [], currency, rate = 1, source = 'manual', ruleId = null, accountId = null }) {
   const main = S().currency;
   const code = currency || main;
   const r = code === main ? 1 : rate;
   const m = { id: uid(), amount: Math.abs(amount), currency: code, rate: r, main: Math.abs(amount) * r, kind,
     catId: catId || fallbackCategory(kind)?.id || null, note, date: date.toISOString(), created: new Date().toISOString(),
-    tags, source, ruleId };
+    tags, source, ruleId, accountId: acctById(accountId) ? accountId : null };
   state.movements.push(m);
   return m;
+}
+
+// ---------------------------------------------------------------- Cuentas
+
+/** Entradas y salidas por cuenta en una lista de movimientos (clave '' = sin cuenta). */
+export function accountFlow(ms) {
+  const flow = new Map();
+  for (const m of ms) {
+    const id = acctById(m.accountId) ? m.accountId : '';
+    const f = flow.get(id) || { in: 0, out: 0, count: 0 };
+    if (m.kind === 'income') f.in += m.main; else f.out += m.main;
+    f.count += 1;
+    flow.set(id, f);
+  }
+  return flow;
+}
+
+const accountNet = (id) => state.movements.reduce((t, m) => (m.accountId === id ? t + (m.kind === 'income' ? m.main : -m.main) : t), 0);
+
+/** Saldo actual, si el usuario le dijo a Rinde cuánto tenía (si no, null). */
+export const accountBalance = (a) => (a?.hasBalance ? a.initial + accountNet(a.id) : null);
+
+/** "Hoy tengo X en esta cuenta": ajusta el punto de partida para que el saldo cuadre. */
+export function setAccountBalance(a, value) {
+  a.initial = value - accountNet(a.id);
+  a.hasBalance = true;
 }
 
 export function deleteMovement(id) {
@@ -172,8 +207,9 @@ export function frequent(kind, limit = 8) {
     if (m.kind !== kind || md(m).getTime() < since || m.currency !== S().currency) continue;
     const title = m.note || catById(m.catId)?.name || '';
     const k = `${P.key(title)}|${m.catId}|${m.amount}`;
-    const g = groups.get(k) || { title, amount: m.amount, catId: m.catId, count: 0 };
+    const g = groups.get(k) || { title, amount: m.amount, catId: m.catId, count: 0, accountId: null, last: 0 };
     g.count += 1;
+    if (md(m).getTime() > g.last) { g.last = md(m).getTime(); g.accountId = m.accountId || null; }
     groups.set(k, g);
   }
   return [...groups.values()].filter((g) => g.count >= 2).sort((a, b) => b.count - a.count).slice(0, limit);
@@ -190,7 +226,7 @@ export function processRecurring(now = new Date()) {
     if (!r.active || !r.auto) continue;
     let guard = 0;
     while (nextDate(r) <= now && guard++ < 400) {
-      addMovement({ amount: r.amount, kind: r.kind, catId: r.catId, note: r.title, date: nextDate(r), source: 'recurring', ruleId: r.id });
+      addMovement({ amount: r.amount, kind: r.kind, catId: r.catId, note: r.title, date: nextDate(r), source: 'recurring', ruleId: r.id, accountId: r.accountId });
       r.count += 1;
       n++;
     }
@@ -203,7 +239,7 @@ export const pendingRules = (now = new Date()) =>
   state.rules.filter((r) => r.active && !r.auto && nextDate(r) <= now).sort((a, b) => nextDate(a) - nextDate(b));
 
 export function confirmRule(r) {
-  addMovement({ amount: r.amount, kind: r.kind, catId: r.catId, note: r.title, date: nextDate(r), source: 'recurring', ruleId: r.id });
+  addMovement({ amount: r.amount, kind: r.kind, catId: r.catId, note: r.title, date: nextDate(r), source: 'recurring', ruleId: r.id, accountId: r.accountId });
   r.count += 1;
 }
 
@@ -232,7 +268,7 @@ export function suggestions(now = new Date()) {
       : avg >= 27 && avg <= 33 ? 'monthly' : avg >= 85 && avg <= 95 ? 'quarterly' : null;
     const last = items[items.length - 1];
     if (!freq || (now - md(last)) / 864e5 > avg * 2 + 5 || (freq === 'weekly' && items.length < 3)) continue;
-    out.push({ title: last.note, amount: last.amount, freq, catId: last.catId, last: md(last), count: items.length });
+    out.push({ title: last.note, amount: last.amount, freq, catId: last.catId, last: md(last), count: items.length, accountId: last.accountId || null });
   }
   return out.sort((a, b) => b.amount - a.amount);
 }
@@ -269,10 +305,10 @@ export function csv() {
     const sign = off >= 0 ? '+' : '-';
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00${sign}${pad(Math.floor(Math.abs(off) / 60))}:${pad(Math.abs(off) % 60)}`;
   };
-  const rows = [`fecha,tipo,monto,moneda,monto_${main.toLowerCase()},categoria,descripcion,etiquetas`];
+  const rows = [`fecha,tipo,monto,moneda,monto_${main.toLowerCase()},categoria,cuenta,descripcion,etiquetas`];
   for (const m of [...state.movements].sort((a, b) => md(a) - md(b))) {
     rows.push([iso(md(m)), m.kind === 'expense' ? 'gasto' : 'ingreso', num(m.amount), m.currency, num(m.main),
-      catById(m.catId)?.name ?? '', m.note, (m.tags || []).map((t) => '#' + t).join(' ')].map((x) => q(String(x))).join(','));
+      catById(m.catId)?.name ?? '', acctById(m.accountId)?.name ?? '', m.note, (m.tags || []).map((t) => '#' + t).join(' ')].map((x) => q(String(x))).join(','));
   }
   return '﻿' + rows.join('\r\n');
 }

@@ -282,3 +282,10 @@ select.chip { appearance: none; -webkit-appearance: none; padding-right: 14px; }
 .card .split > div > small, .card .split > div > b { display: block; }
 .slice .split b { white-space: nowrap; }
 .slice .split b:first-child { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+/* ---------- Cuentas (de dónde sale / a dónde entra la plata) */
+.acct-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.acct { display: inline-flex; align-items: center; gap: 6px; padding: 8px 13px; border-radius: 99px; background: var(--fill); font-size: 15px; font-weight: 500; border: 1.5px solid transparent; transition: background .15s, border-color .15s; }
+.acct span { font-size: 17px; line-height: 1; }
+.acct.on { background: color-mix(in srgb, var(--c) 16%, transparent); border-color: var(--c); font-weight: 600; }
+.acct.add { color: var(--brand); background: none; border: 1.5px dashed var(--sep); }

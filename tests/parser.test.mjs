@@ -1,6 +1,6 @@
 // Pruebas del analizador (mismas de la app nativa). Ejecutar: node tests/parser.test.mjs
 import { parse, parseNumberLiteral, parseReceipt, key } from '../js/parser.js';
-import { SEED } from '../js/catalog.js';
+import { SEED, ACCOUNT_SEED } from '../js/catalog.js';
 import { periodContaining, shiftPeriod, daysLeft, occurrence, fmt, compact } from '../js/money.js';
 
 let passed = 0; let failed = 0;
@@ -80,6 +80,26 @@ const r = parseReceipt(receipt, matchers, {}, now);
 check(r.total === 29690 && r.merchant === 'Supermercados Olimpica S.A.' && day(r.date) === '2026-9-22' && r.categoryId === 'groceries', `recibo ${JSON.stringify(r)}`);
 const r2 = parseReceipt('Crepes & Waffles\nMesa 12\nCrepe pollo 32.900\nLimonada 9.800\nTotal $ 46.970', matchers, {}, now);
 check(r2.total === 46970 && r2.categoryId === 'food', `recibo 2 ${JSON.stringify(r2)}`);
+
+// Cuentas: de dónde salió o a dónde entró la plata
+const accounts = ACCOUNT_SEED.map((a) => ({ id: a.key, keywords: [key(a.name), ...a.keywords] }));
+const pa = (s) => parse(s, matchers, {}, now, accounts);
+let a = pa('almuerzo 18 mil con nequi')[0];
+check(a.accountId === 'nequi' && a.amount === 18000 && a.note === 'Almuerzo' && k(a) === 'food', `nequi ${JSON.stringify(a)}`);
+a = pa('uber 12.500 en efectivo ayer')[0];
+check(a.accountId === 'cash' && a.amount === 12500 && a.note === 'Uber' && day(a.date) === '2026-9-23', `efectivo ${JSON.stringify(a)}`);
+a = pa('me pagaron 2 millones a mi cuenta de bancolombia')[0];
+check(a.accountId === 'bancolombia' && a.kind === 'income' && a.amount === 2e6 && k(a) === 'salary', `bancolombia ${JSON.stringify(a)}`);
+a = pa('pagué con davivienda el arriendo 1.200.000')[0];
+check(a.accountId === 'davivienda' && a.amount === 1.2e6 && a.note === 'Arriendo' && k(a) === 'home', `davivienda ${JSON.stringify(a)}`);
+a = pa('almuerzo con nequi en el éxito 30 mil')[0];
+check(a.accountId === 'nequi' && a.note === 'Almuerzo en el éxito', `nota limpia ${JSON.stringify(a)}`);
+const two = pa('almuerzo 20 mil y taxi 12 mil con nequi');
+check(two.length === 2 && two.every((x) => x.accountId === 'nequi'), `cuenta compartida ${JSON.stringify(two)}`);
+const mixed = pa('almuerzo 20 mil con nequi y taxi 12 mil en efectivo');
+check(mixed[0].accountId === 'nequi' && mixed[1].accountId === 'cash', `cuentas distintas ${JSON.stringify(mixed)}`);
+check(pa('almuerzo 18 mil')[0].accountId === null, 'sin cuenta');
+check(p('almuerzo 18 mil con nequi')[0].note === 'Almuerzo con nequi', 'sin lista de cuentas no cambia nada');
 
 const per = periodContaining(now, 1);
 check(day(per.start) === '2026-9-1' && day(per.end) === '2026-10-1', 'periodo mes');

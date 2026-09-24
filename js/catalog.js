@@ -849,3 +849,11 @@ export const SEED = [
 ];
 
 export const FALLBACK = { expense: 'other', income: 'otherIncome' };
+
+/** Cuentas iniciales: de dónde sale y a dónde entra la plata. */
+export const ACCOUNT_SEED = [
+  { key: 'bancolombia', name: 'Bancolombia', icon: '🏦', color: '#EAB308', keywords: ['bancolombia', 'bancol'] },
+  { key: 'davivienda', name: 'Davivienda', icon: '🏠', color: '#DC2626', keywords: ['davivienda', 'davi'] },
+  { key: 'nequi', name: 'Nequi', icon: '📱', color: '#C026D3', keywords: ['nequi'] },
+  { key: 'cash', name: 'Efectivo', icon: '💵', color: '#16A34A', keywords: ['efectivo', 'cash', 'en billetes'] },
+];

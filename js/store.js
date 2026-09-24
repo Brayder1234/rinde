@@ -1,5 +1,5 @@
 // Datos de Rinde: se guardan solo en este teléfono (localStorage del navegador).
-import { SEED } from './catalog.js';
+import { SEED, ACCOUNT_SEED } from './catalog.js';
 
 const KEY = 'rinde.v1';
 
@@ -20,12 +20,18 @@ export function seedCategories() {
     order: i, budget: 0, archived: false }));
 }
 
+export function seedAccounts() {
+  return ACCOUNT_SEED.map((a, i) => ({ id: a.key, key: a.key, name: a.name, icon: a.icon, color: a.color,
+    order: i, initial: 0, hasBalance: false, archived: false }));
+}
+
 function defaults() {
   return {
     v: 1,
     settings: { onboarded: false, name: '', currency: guessCurrency(), budget: 0, cycleDay: 1, hide: false,
-      theme: 'auto', alerts: true, safeMode: 0, lastBackup: null, installDismissed: false },
+      theme: 'auto', alerts: true, safeMode: 0, lastBackup: null, installDismissed: false, lastAccount: {} },
     categories: seedCategories(),
+    accounts: seedAccounts(),
     movements: [],
     rules: [],
     goals: [],
