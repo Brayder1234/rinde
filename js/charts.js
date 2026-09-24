@@ -3,18 +3,18 @@
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 /** Dona: slices [{value, color}] */
-export function donut(slices, { size = 220, thickness = 0.36, center = '', sub = 'Total' } = {}) {
+export function donut(slices, { size = 220, thickness = 0.14, center = '', sub = 'Total' } = {}) {
   const total = slices.reduce((a, s) => a + s.value, 0);
   const r = size / 2;
   const inner = r * (1 - thickness);
   let paths = '';
   if (total <= 0) {
-    paths = `<circle cx="${r}" cy="${r}" r="${(r + inner) / 2}" fill="none" stroke="var(--fill)" stroke-width="${r - inner}"/>`;
+    paths = `<circle cx="${r}" cy="${r}" r="${(r + inner) / 2}" fill="none" stroke="var(--line-2)" stroke-width="${r - inner}"/>`;
   } else if (slices.length === 1) {
     paths = `<circle cx="${r}" cy="${r}" r="${(r + inner) / 2}" fill="none" stroke="${slices[0].color}" stroke-width="${r - inner}"/>`;
   } else {
     let a0 = -Math.PI / 2;
-    const gap = Math.min(0.025, 0.4 / slices.length);
+    const gap = Math.min(0.045, 0.6 / slices.length);
     for (const s of slices) {
       const ang = (s.value / total) * Math.PI * 2;
       const a1 = a0 + ang;
@@ -45,14 +45,14 @@ export function bars(groups, colors, fmt, { height = 190 } = {}) {
   const W = 340; const pad = 18; const left = 48; const bottom = 22;
   const innerW = W - left - 6;
   const gw = innerW / groups.length;
-  const bw = Math.min(16, (gw - 10) / groups[0].values.length);
+  const bw = Math.min(9, (gw - 14) / groups[0].values.length);
   let out = '';
   groups.forEach((g, i) => {
     const cx = left + gw * i + gw / 2;
     g.values.forEach((v, j) => {
       const hgt = ((height - bottom - pad) * v) / max;
       const x = cx - (bw * g.values.length) / 2 + j * bw;
-      out += `<rect x="${x.toFixed(1)}" y="${(height - bottom - hgt).toFixed(1)}" width="${(bw - 2).toFixed(1)}" height="${Math.max(hgt, 0).toFixed(1)}" rx="3" fill="${colors[j]}"/>`;
+      out += `<rect x="${x.toFixed(1)}" y="${(height - bottom - hgt).toFixed(1)}" width="${(bw - 2).toFixed(1)}" height="${Math.max(hgt, 0).toFixed(1)}" rx="2" fill="${colors[j]}"/>`;
     });
     out += `<text x="${cx}" y="${height - 6}" class="xlabel" text-anchor="middle">${esc(g.label)}</text>`;
   });
@@ -73,7 +73,7 @@ export function daily(values, labels, avg, fmt, color, { height = 160 } = {}) {
   });
   if (avg > 0) {
     const y = height - bottom - ((height - bottom - pad) * avg) / max;
-    out += `<line x1="${left}" x2="${W}" y1="${y}" y2="${y}" stroke="#F97316" stroke-width="1.5" stroke-dasharray="4 4"/>`;
+    out += `<line x1="${left}" x2="${W}" y1="${y}" y2="${y}" stroke="var(--ink)" stroke-opacity=".55" stroke-width="1" stroke-dasharray="3 4"/>`;
   }
   return `<svg class="chart" viewBox="0 0 ${W} ${height}">${axisLabels(max, fmt, height - bottom + pad, pad)}${out}</svg>`;
 }
@@ -87,9 +87,9 @@ export function line(points, color, fmt, { height = 170 } = {}) {
     height - bottom - ((height - bottom - pad) * p.value) / max]);
   const d = xy.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ');
   const area = `${d} L${xy[xy.length - 1][0].toFixed(1)} ${height - bottom} L${xy[0][0].toFixed(1)} ${height - bottom}Z`;
-  let out = `<path d="${area}" fill="${color}" opacity="0.15"/><path d="${d}" fill="none" stroke="${color}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>`;
+  let out = `<path d="${area}" fill="${color}" opacity="0.07"/><path d="${d}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>`;
   xy.forEach(([x, y], i) => {
-    out += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4" fill="${color}"/>`;
+    out += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.2" fill="var(--bg)" stroke="${color}" stroke-width="1.6"/>`;
     out += `<text x="${x.toFixed(1)}" y="${height - 6}" class="xlabel" text-anchor="middle">${esc(points[i].label)}</text>`;
   });
   return `<svg class="chart" viewBox="0 0 ${W} ${height}">${axisLabels(max, fmt, height - bottom + pad, pad)}${out}</svg>`;
