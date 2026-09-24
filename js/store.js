@@ -40,10 +40,29 @@ function load() {
     const raw = localStorage.getItem(KEY);
     if (!raw) return base;
     const data = JSON.parse(raw);
-    return { ...base, ...data, settings: { ...base.settings, ...(data.settings || {}) } };
+    return restoreV1({ ...base, ...data, settings: { ...base.settings, ...(data.settings || {}) } });
   } catch {
     return base;
   }
+}
+
+/** Datos guardados por el diseño negro (v2, retirado): vuelve a emojis y colores. */
+function restoreV1(data) {
+  if ((data.v || 1) < 2) return data;
+  const seed = Object.fromEntries(SEED.map((s) => [s.key, s]));
+  const isWord = (x) => /^[a-z]+$/i.test(x || '');
+  for (const c of data.categories || []) {
+    if (seed[c.key]) { c.icon = seed[c.key].icon; c.color = seed[c.key].color; continue; }
+    if (isWord(c.icon)) c.icon = '📦';
+    if (!c.color || c.color === '#FFFFFF') c.color = '#64748B';
+  }
+  for (const g of data.goals || []) {
+    if (isWord(g.icon)) g.icon = '⭐';
+    if (!g.color || /^#fff(fff)?$/i.test(g.color)) g.color = '#0E9F6E';
+  }
+  if (data.settings.theme === 'dark') data.settings.theme = 'auto';
+  data.v = 1;
+  return data;
 }
 
 /** El objeto de estado nunca se reemplaza (las vistas guardan referencias a él). */
@@ -61,7 +80,7 @@ export function save() {
 export function replaceAll(data) {
   const base = defaults();
   for (const k of Object.keys(state)) delete state[k];
-  Object.assign(state, base, data, { settings: { ...base.settings, ...(data.settings || {}) } });
+  Object.assign(state, restoreV1({ ...base, ...data, settings: { ...base.settings, ...(data.settings || {}) } }));
   save();
 }
 
