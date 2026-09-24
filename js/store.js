@@ -22,9 +22,9 @@ export function seedCategories() {
 
 function defaults() {
   return {
-    v: 2,
+    v: 1,
     settings: { onboarded: false, name: '', currency: guessCurrency(), budget: 0, cycleDay: 1, hide: false,
-      theme: 'dark', alerts: true, safeMode: 0, lastBackup: null, installDismissed: false },
+      theme: 'auto', alerts: true, safeMode: 0, lastBackup: null, installDismissed: false },
     categories: seedCategories(),
     movements: [],
     rules: [],
@@ -40,25 +40,10 @@ function load() {
     const raw = localStorage.getItem(KEY);
     if (!raw) return base;
     const data = JSON.parse(raw);
-    return migrate({ ...base, ...data, settings: { ...base.settings, ...(data.settings || {}) } });
+    return { ...base, ...data, settings: { ...base.settings, ...(data.settings || {}) } };
   } catch {
     return base;
   }
-}
-
-/** v1 → v2: diseño negro con íconos de línea (antes emojis y colores por categoría). */
-function migrate(data) {
-  if ((data.v || 1) < 2) {
-    const byKey = Object.fromEntries(SEED.map((s) => [s.key, s.icon]));
-    for (const c of data.categories || []) {
-      if (byKey[c.key]) c.icon = byKey[c.key];
-      else if (!/^[a-z]+$/i.test(c.icon || '')) c.icon = 'tag';
-    }
-    for (const g of data.goals || []) if (!/^[a-z]+$/i.test(g.icon || '')) g.icon = 'star';
-    if (data.settings.theme === 'auto') data.settings.theme = 'dark';
-    data.v = 2;
-  }
-  return data;
 }
 
 /** El objeto de estado nunca se reemplaza (las vistas guardan referencias a él). */
@@ -76,7 +61,7 @@ export function save() {
 export function replaceAll(data) {
   const base = defaults();
   for (const k of Object.keys(state)) delete state[k];
-  Object.assign(state, migrate({ ...base, ...data, settings: { ...base.settings, ...(data.settings || {}) } }));
+  Object.assign(state, base, data, { settings: { ...base.settings, ...(data.settings || {}) } });
   save();
 }
 

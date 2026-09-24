@@ -26,7 +26,7 @@ export function byCategory(ms, kind = 'expense') {
   }
   return [...map.entries()].map(([id, v]) => {
     const c = catById(id);
-    return { id, name: c?.name ?? 'Sin categoría', icon: c?.icon ?? 'tag', color: c?.color ?? '#8A8A8D', ...v };
+    return { id, name: c?.name ?? 'Sin categoría', icon: c?.icon ?? '❔', color: c?.color ?? '#94A3B8', ...v };
   }).sort((a, b) => b.total - a.total);
 }
 

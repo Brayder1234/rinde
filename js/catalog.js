@@ -3,7 +3,7 @@ export const SEED = [
  {
   "key": "food",
   "name": "Comida y restaurantes",
-  "icon": "utensils",
+  "icon": "🍽️",
   "color": "#F97316",
   "kind": "expense",
   "keywords": [
@@ -87,7 +87,7 @@ export const SEED = [
  {
   "key": "groceries",
   "name": "Mercado",
-  "icon": "cart",
+  "icon": "🛒",
   "color": "#22C55E",
   "kind": "expense",
   "keywords": [
@@ -141,7 +141,7 @@ export const SEED = [
  {
   "key": "transport",
   "name": "Transporte",
-  "icon": "car",
+  "icon": "🚗",
   "color": "#3B82F6",
   "kind": "expense",
   "keywords": [
@@ -193,7 +193,7 @@ export const SEED = [
  {
   "key": "fuel",
   "name": "Gasolina",
-  "icon": "fuel",
+  "icon": "⛽",
   "color": "#0EA5E9",
   "kind": "expense",
   "keywords": [
@@ -224,7 +224,7 @@ export const SEED = [
  {
   "key": "home",
   "name": "Hogar y arriendo",
-  "icon": "home",
+  "icon": "🏠",
   "color": "#A16207",
   "kind": "expense",
   "keywords": [
@@ -263,7 +263,7 @@ export const SEED = [
  {
   "key": "utilities",
   "name": "Servicios públicos",
-  "icon": "bolt",
+  "icon": "💡",
   "color": "#EAB308",
   "kind": "expense",
   "keywords": [
@@ -295,7 +295,7 @@ export const SEED = [
  {
   "key": "telecom",
   "name": "Internet y celular",
-  "icon": "wifi",
+  "icon": "📶",
   "color": "#6366F1",
   "kind": "expense",
   "keywords": [
@@ -327,7 +327,7 @@ export const SEED = [
  {
   "key": "health",
   "name": "Salud",
-  "icon": "pulse",
+  "icon": "🩺",
   "color": "#EF4444",
   "kind": "expense",
   "keywords": [
@@ -378,7 +378,7 @@ export const SEED = [
  {
   "key": "education",
   "name": "Educación",
-  "icon": "cap",
+  "icon": "🎓",
   "color": "#8B5CF6",
   "kind": "expense",
   "keywords": [
@@ -416,7 +416,7 @@ export const SEED = [
  {
   "key": "fun",
   "name": "Entretenimiento",
-  "icon": "gamepad",
+  "icon": "🎮",
   "color": "#EC4899",
   "kind": "expense",
   "keywords": [
@@ -467,7 +467,7 @@ export const SEED = [
  {
   "key": "subscriptions",
   "name": "Suscripciones",
-  "icon": "screen",
+  "icon": "📺",
   "color": "#D946EF",
   "kind": "expense",
   "keywords": [
@@ -509,7 +509,7 @@ export const SEED = [
  {
   "key": "clothing",
   "name": "Ropa y accesorios",
-  "icon": "shirt",
+  "icon": "👕",
   "color": "#14B8A6",
   "kind": "expense",
   "keywords": [
@@ -553,7 +553,7 @@ export const SEED = [
  {
   "key": "shopping",
   "name": "Compras",
-  "icon": "bag",
+  "icon": "🛍️",
   "color": "#F43F5E",
   "kind": "expense",
   "keywords": [
@@ -594,7 +594,7 @@ export const SEED = [
  {
   "key": "care",
   "name": "Cuidado personal",
-  "icon": "sparkle",
+  "icon": "💅",
   "color": "#FB7185",
   "kind": "expense",
   "keywords": [
@@ -630,7 +630,7 @@ export const SEED = [
  {
   "key": "pets",
   "name": "Mascotas",
-  "icon": "paw",
+  "icon": "🐾",
   "color": "#B45309",
   "kind": "expense",
   "keywords": [
@@ -660,7 +660,7 @@ export const SEED = [
  {
   "key": "travel",
   "name": "Viajes",
-  "icon": "plane",
+  "icon": "✈️",
   "color": "#06B6D4",
   "kind": "expense",
   "keywords": [
@@ -699,7 +699,7 @@ export const SEED = [
  {
   "key": "gifts",
   "name": "Regalos y donaciones",
-  "icon": "gift",
+  "icon": "🎁",
   "color": "#E11D48",
   "kind": "expense",
   "keywords": [
@@ -723,7 +723,7 @@ export const SEED = [
  {
   "key": "debt",
   "name": "Deudas e impuestos",
-  "icon": "card",
+  "icon": "💳",
   "color": "#64748B",
   "kind": "expense",
   "keywords": [
@@ -763,7 +763,7 @@ export const SEED = [
  {
   "key": "other",
   "name": "Otros gastos",
-  "icon": "dots",
+  "icon": "📦",
   "color": "#94A3B8",
   "kind": "expense",
   "keywords": [
@@ -776,7 +776,7 @@ export const SEED = [
  {
   "key": "salary",
   "name": "Salario",
-  "icon": "wallet",
+  "icon": "💰",
   "color": "#16A34A",
   "kind": "income",
   "keywords": [
@@ -798,7 +798,7 @@ export const SEED = [
  {
   "key": "business",
   "name": "Negocio y ventas",
-  "icon": "briefcase",
+  "icon": "💼",
   "color": "#059669",
   "kind": "income",
   "keywords": [
@@ -827,7 +827,7 @@ export const SEED = [
  {
   "key": "otherIncome",
   "name": "Otros ingresos",
-  "icon": "coinIn",
+  "icon": "💵",
   "color": "#10B981",
   "kind": "income",
   "keywords": [
