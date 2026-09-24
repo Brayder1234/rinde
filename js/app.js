@@ -11,7 +11,7 @@ const S = () => state.settings;
 const ui = {
   tab: 'home', sheets: [], mvOffset: 0, anOffset: 0,
   filter: { kind: null, cat: null, tag: null, acct: null, q: '' },
-  anKind: 'expense', evoCat: null, plans: 'budgets', onb: { step: 0, q: '' },
+  anKind: 'expense', evoCat: null, plans: 'budgets', onb: { step: 0, q: '', bal: {} },
 };
 const A = {};   // acciones de botones (data-act)
 const IN = {};  // acciones al escribir (data-in)
@@ -28,8 +28,34 @@ const ACCT_EMOJIS = ['🏦', '🏠', '📱', '💵', '💳', '👛', '💰', '�
 const acctBadge = (a, size = 36) => catIcon(a || { icon: '💳', color: '#94A3B8' }, size);
 function defaultAcct(kind) {
   const a = L.acctById(S().lastAccount?.[kind]);
-  return a && !a.archived ? a.id : null;
+  if (a && !a.archived) return a.id;
+  return L.activeAccounts().find((x) => x.hasBalance)?.id ?? null;
 }
+
+/** Dinero total: suma de las cuentas con saldo conocido (null si no hay ninguna). */
+function totalMoney() {
+  const accts = L.activeAccounts().filter((a) => a.hasBalance);
+  return accts.length ? accts.reduce((t, a) => t + L.accountBalance(a), 0) : null;
+}
+
+/** "¿Cuánto dinero tienes ahora mismo?": un campo por cuenta y el total. */
+function moneyForm(vals) {
+  const sum = Object.values(vals).reduce((t, v) => t + v, 0);
+  return `<section class="card form money-form">${L.activeAccounts().map((a) => `<label class="frow">${acctBadge(a, 34)}<span class="grow">${esc(a.name)}</span>
+      <span class="inline-amount"><span>${esc(M.symbol(cur()))}</span><input inputmode="decimal" placeholder="0" data-in="moneyAcct" data-id="${a.id}"
+        value="${vals[a.id] > 0 ? M.groupDigits(M.rawFromValue(vals[a.id], cur())) : ''}"></span></label>`).join('')}
+    <div class="frow money-total"><b class="grow">Total</b><b id="moneyTotal">${money(sum, { force: true })}</b></div></section>`;
+}
+IN.moneyAcct = (el) => {
+  const sh = topSheet();
+  const inSheet = sh?.type === 'money';
+  const vals = inSheet ? sh.st.vals : ui.onb.bal;
+  const raw = M.sanitizeAmount(el.value, cur());
+  el.value = M.groupDigits(raw);
+  if (raw === '') delete vals[el.dataset.id]; else vals[el.dataset.id] = M.amountValue(raw);
+  if (inSheet) sh.st.touched.add(el.dataset.id);
+  $('#moneyTotal').textContent = money(Object.values(vals).reduce((t, v) => t + v, 0), { force: true });
+};
 
 // ================================================================ Arranque
 
@@ -103,7 +129,7 @@ function viewOnboarding() {
       <p class="muted">Controla tus gastos escribiendo como en un chat. Sin bancos, sin cuentas y 100&nbsp;% privado.</p></div>
       <ul class="features">
         ${feat('💬', 'Escribe “almuerzo 18 mil”', 'Rinde entiende el monto, la categoría y la fecha.')}
-        ${feat('📊', 'Presupuestos y metas', 'Sabe cuánto puedes gastar hoy y ahorra para lo que quieres.')}
+        ${feat('🏦', 'Tu dinero siempre al día', 'Cuánto tienes en cada cuenta, cuánto puedes gastar y tus metas.')}
         ${feat('🔒', 'Tus datos no salen del teléfono', 'Sin servidores y sin publicidad. Funciona sin internet.')}
       </ul>
       <button class="primary" data-act="onbNext">Empezar</button>`;
@@ -118,10 +144,9 @@ function viewOnboarding() {
     body = `<h2>Últimos detalles</h2>
       <label class="field-label">¿Cómo te llamas?</label>
       <input class="field" placeholder="Tu nombre (opcional)" value="${esc(S().name)}" data-in="onbName" autocomplete="given-name">
-      <label class="field-label">¿Cuánto quieres gastar al mes?</label>
-      <p class="muted small">Con esto calculamos cuánto puedes gastar cada día. Puedes cambiarlo cuando quieras.</p>
-      <div class="field amount-field"><span>${esc(M.symbol(S().currency))}</span>
-        <input inputmode="decimal" placeholder="0" value="${S().budget ? M.groupDigits(M.rawFromValue(S().budget, cur())) : ''}" data-in="onbBudget"></div>
+      <label class="field-label">¿Cuánto dinero tienes ahora mismo?</label>
+      <p class="muted small onb-note">Escribe lo que tienes en cada lugar. Deja en blanco los que no uses; puedes cambiarlo cuando quieras.</p>
+      ${moneyForm(st.bal)}
       <div class="spacer"></div>
       <button class="primary" data-act="onbFinish">Empezar a usar Rinde</button>`;
   }
@@ -136,8 +161,10 @@ A.onbNext = () => { ui.onb.step++; render(); scrollTo(0, 0); };
 A.onbCurrency = (d) => { S().currency = d.code; $('#onbList').innerHTML = currencyRows(M.CURRENCIES.filter((c) => !P.key(ui.onb.q) || P.key(`${c} ${M.currencyName(c)}`).includes(P.key(ui.onb.q)))); $('.onb .primary').textContent = `Continuar con ${d.code}`; };
 IN.onbSearch = (el) => { ui.onb.q = el.value; const q = P.key(el.value); $('#onbList').innerHTML = currencyRows(M.CURRENCIES.filter((c) => !q || P.key(`${c} ${M.currencyName(c)}`).includes(q))); };
 IN.onbName = (el) => { S().name = el.value.trim(); };
-IN.onbBudget = (el) => { const raw = M.sanitizeAmount(el.value, cur()); el.value = M.groupDigits(raw); S().budget = M.amountValue(raw); };
-A.onbFinish = () => { S().onboarded = true; commit(); render(); };
+A.onbFinish = () => {
+  for (const [id, v] of Object.entries(ui.onb.bal)) { const a = L.acctById(id); if (a) L.setAccountBalance(a, v); }
+  S().onboarded = true; commit(); render();
+};
 
 function logo(size = 64) {
   const id = `lg${size}`;
@@ -164,7 +191,8 @@ function viewHome() {
       <button class="icon-btn" data-act="openSettings" aria-label="Ajustes">${icon('gear')}</button></div>
       <h1>${esc(name ? `${greet}, ${name}` : greet)}</h1></header>
     ${!standalone && !S().installDismissed ? installCard() : ''}
-    ${safeCard(s)}
+    ${moneyCard()}
+    ${spendCard(s)}
     <button class="quick" data-act="openAdd">${icon('sparkles', 'brand')}<span>Escribe: “almuerzo 18 mil”</span><span class="quick-mic">${icon('plus')}</span></button>
     <div class="tiles">
       ${tile('Gastos', s.spent, 'up', 'red')}${tile('Ingresos', s.income, 'dn', 'green')}${tile('Hoy', s.today, 'sun', 'orange')}
@@ -216,29 +244,51 @@ function backupReminder() {
   return `<button class="card row-card" data-act="openData">${icon('download', 'brand big')}<span class="grow"><b>Haz una copia de seguridad</b><small>Tus datos viven solo en este teléfono. Guárdalos en Archivos o iCloud.</small></span>${icon('right', 'muted')}</button>`;
 }
 
-function safeCard(s) {
+/** Tarjeta principal: el dinero que tienes ahora (suma de tus cuentas). */
+function moneyCard() {
+  const accts = L.activeAccounts().filter((a) => a.hasBalance);
+  if (!accts.length) {
+    return `<button class="safe" data-act="openMoney">
+      <div class="safe-top"><span>Tu dinero</span></div>
+      <div class="safe-q">¿Cuánto dinero tienes ahora mismo?</div>
+      <p class="safe-sub">Escribe lo que tienes en tus cuentas y en efectivo. Rinde lo mantiene al día con cada gasto e ingreso.</p>
+      <span class="safe-cta">＋ Poner mi dinero</span></button>`;
+  }
+  const total = totalMoney();
+  return `<button class="safe ${total < 0 ? 'over' : ''}" data-act="openMoney">
+    <div class="safe-top"><span>Tienes ahora</span><span class="pill">${accts.length === 1 ? '1 cuenta' : `${accts.length} cuentas`}</span></div>
+    <div class="safe-amount">${money(total)}</div>
+    <div class="acct-mini">${accts.map((a) => `<span>${a.icon} ${esc(a.name)} <b>${money(L.accountBalance(a))}</b></span>`).join('')}</div>
+  </button>`;
+}
+
+/** Aparte: lo que puedes gastar según tu presupuesto. */
+function spendCard(s) {
+  if (!s.hasBudget) {
+    return `<button class="card row-card" data-act="openBudget">${catIcon({ icon: '🎯', color: '#0E9F6E' }, 40)}
+      <span class="grow"><b>¿Cuánto quieres gastar al mes?</b><small>Ponte un límite y te digo cuánto puedes gastar cada día.</small></span>${icon('right', 'muted')}</button>`;
+  }
   const mode = S().safeMode || 0;
-  const hasModes = (s.hasBudget || s.income > 0) && !s.isOver;
   let value = s.remaining; let title;
   if (s.isOver) title = 'Te pasaste del presupuesto';
-  else if (!s.hasBudget) title = s.income > 0 ? 'Disponible (ingresos − gastos)' : 'Balance del mes';
-  else title = ['Puedes gastar hoy', 'Puedes gastar esta semana', 'Disponible este mes'][mode];
-  if (hasModes) value = mode === 0 ? s.dayBudget - s.today : mode === 1 ? Math.min(s.perDay * 7, Math.max(s.remaining, 0)) : s.remaining;
-  const days = s.days === 1 ? 'Último día del periodo' : `${s.days} días restantes`;
-  let sub;
-  if (s.isOver) sub = `Vas ${money(-s.remaining)} por encima. ${days}.`;
-  else if (!s.hasBudget && s.income <= 0) sub = 'Registra tus ingresos o define un presupuesto para saber cuánto puedes gastar.';
-  else if (s.hasBudget && mode === 0) sub = `Tu cupo diario es ${money(s.dayBudget)} · ${days}`;
-  else sub = `≈ ${money(s.perDay)} por día · ${days}`;
-  return `<section class="safe ${s.isOver ? 'over' : ''}">
-    <div class="safe-top"><span>${title}</span><span class="pill">${esc(M.periodTitle(s.p))}</span></div>
-    <div class="safe-amount">${money(value)}</div>
-    ${hasModes ? `<div class="modes">${['Hoy', 'Semana', 'Mes'].map((l, i) => `<button class="${i === mode ? 'on' : ''}" data-act="safeMode" data-mode="${i}">${l}</button>`).join('')}</div>` : ''}
-    <p class="safe-sub">${sub}</p>
-    ${s.hasBudget ? `<div class="bar light"><i style="width:${Math.min(s.progress, 1) * 100}%"></i></div>
-      <div class="safe-foot"><span>Gastado ${money(s.spent)}</span><span>de ${money(s.budget)}</span></div>`
-      : `<button class="safe-cta" data-act="openBudget">＋ Define tu presupuesto mensual</button>`}
-  </section>`;
+  else {
+    title = ['Puedes gastar hoy', 'Puedes gastar esta semana', 'Puedes gastar este mes'][mode];
+    value = mode === 0 ? s.dayBudget - s.today : mode === 1 ? Math.min(s.perDay * 7, Math.max(s.remaining, 0)) : s.remaining;
+  }
+  const days = s.days === 1 ? 'último día del periodo' : `${s.days} días restantes`;
+  const sub = s.isOver ? `Vas ${money(-s.remaining)} por encima · ${days}`
+    : mode === 0 ? `Tu cupo diario es ${money(s.dayBudget)} · ${days}` : `≈ ${money(s.perDay)} por día · ${days}`;
+  const have = totalMoney();
+  const warn = have != null && !s.isOver && have < s.remaining
+    ? `<p class="small orange mt">Ojo: tienes ${money(have)}, menos de lo que te queda del presupuesto.</p>` : '';
+  return `<section class="card spend">
+    <div class="split"><h3>${title}</h3><button class="icon-btn sm" data-act="openBudget" aria-label="Editar presupuesto">${icon('pencil')}</button></div>
+    <div class="spend-amount ${s.isOver || value < 0 ? 'red' : 'brand'}">${money(s.isOver ? -value : value)}</div>
+    ${s.isOver ? '' : `<div class="seg">${['Hoy', 'Semana', 'Mes'].map((l, i) => `<button class="${i === mode ? 'on' : ''}" data-act="safeMode" data-mode="${i}">${l}</button>`).join('')}</div>`}
+    <p class="muted small">${sub}</p>
+    ${bar(s.progress, 'var(--brand)')}
+    <div class="split small muted"><span>Gastado ${money(s.spent)}</span><span>de ${money(s.budget)}</span></div>
+    ${warn}</section>`;
 }
 const tile = (label, v, ic, color) => {
   const t = money(v);
@@ -1265,6 +1315,28 @@ A.deleteCat = () => {
 A.openData = () => openSheet('settings');
 
 // ---------------------------------------------------------------- Cuentas
+
+A.openMoney = () => openSheet('money');
+SHEETS.money = {
+  init: () => ({ touched: new Set(),
+    vals: Object.fromEntries(L.activeAccounts().filter((a) => a.hasBalance).map((a) => [a.id, Math.max(L.accountBalance(a), 0)])) }),
+  html: (sh) => `${head('Tu dinero', '<button class="link bold" data-act="saveMoney">Guardar</button>')}<div class="sh-body">
+    <h3 class="money-q">¿Cuánto dinero tienes ahora mismo?</h3>
+    <p class="foot-note" style="margin:0 4px 14px">Escribe lo que hay en cada cuenta. Desde aquí Rinde lo mantiene al día con cada gasto e ingreso que anotes.</p>
+    ${moneyForm(sh.st.vals)}
+    <button class="card add-btn" data-act="newAccount">＋ Agregar otra cuenta</button></div>`,
+};
+A.saveMoney = () => {
+  const st = topSheet().st;
+  for (const id of st.touched) {
+    const a = L.acctById(id);
+    if (!a) continue;
+    if (st.vals[id] != null) L.setAccountBalance(a, st.vals[id]);
+    else a.hasBalance = false;
+  }
+  commit(st.touched.size ? 'Tu dinero quedó al día' : null);
+  closeSheet();
+};
 
 A.openAccounts = () => openSheet('accounts');
 SHEETS.accounts = {
