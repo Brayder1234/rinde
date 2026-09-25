@@ -5,6 +5,7 @@ import * as M from './money.js';
 import * as C from './charts.js';
 import * as P from './parser.js';
 import { SEED } from './catalog.js';
+import { monthReport } from './advice.js';
 import { $, $$, esc, cur, money, compactMoney, icon, catIcon, toInputDate, fromInputDate, dayLabel, shortDate, longDate, toast, shareFile } from './ui.js';
 
 const S = () => state.settings;
@@ -196,6 +197,7 @@ function viewHome() {
     <button class="quick" data-act="openAdd">${icon('sparkles', 'brand')}<span>Escribe: “almuerzo 18 mil”</span><span class="quick-mic">${icon('plus')}</span></button>
     ${S().applePay ? `<button class="card row-card paste-card" data-act="pastePayment"><span class="paste-ic">${icon('clipboard')}</span>
       <span class="grow"><b>Pegar pago de Apple Pay</b><small>Registra el último pago que copió Atajos</small></span>${icon('right', 'muted')}</button>` : ''}
+    ${reportPrompt()}
     <div class="tiles">
       ${tile('Gastos', s.spent, 'up', 'red')}${tile('Ingresos', s.income, 'dn', 'green')}${tile('Hoy', s.today, 'sun', 'orange')}
     </div>
@@ -292,6 +294,28 @@ function spendCard(s) {
     <div class="split small muted"><span>Gastado ${money(s.spent)}</span><span>de ${money(s.budget)}</span></div>
     ${warn}</section>`;
 }
+// ---------------------------------------------------------------- Resumen y recomendaciones del mes
+
+const reportFor = (p) => monthReport({ movements: state.movements, categories: state.categories, goals: state.goals, p,
+  fmt: (v) => money(v).replace(/ /g, '\u00a0') });
+
+/** A fin de mes (últimos 3 días) y en los primeros 7 del siguiente, invita a ver el resumen. */
+function reportPrompt() {
+  const now = new Date(); const curP = L.currentPeriod(now);
+  let off;
+  if (M.daysLeft(curP, now) <= 3) off = 0;
+  else if ((now - curP.start) / 864e5 < 7) off = -1;
+  else return '';
+  const p = M.shiftPeriod(curP, off);
+  if (S().reportsSeen?.[toInputDate(p.start)]) return '';
+  const r = reportFor(p);
+  if (!r.hasData || !r.tips.length) return '';
+  return `<button class="card row-card report-card" data-act="openReport" data-off="${off}"><span class="report-ic">💡</span>
+    <span class="grow"><b>${off === 0 ? 'Así cierra tu mes' : `Tu resumen de ${esc(M.periodTitle(p).toLowerCase())}`}</b>
+    <small>${esc(r.tips[0].title)} · ver recomendaciones</small></span>${icon('right', 'muted')}</button>`;
+}
+
+
 const tile = (label, v, ic, color) => {
   const t = money(v);
   return `<div class="tile"><span class="tile-l ${color}">${icon(ic)}${label}</span><b class="${t.length > 10 ? 'long' : ''}">${t}</b></div>`;
@@ -482,6 +506,8 @@ function viewAnalysis() {
         <div class="right"><small class="muted">${saving >= 0 ? 'Ahorro' : 'Déficit'}</small><b class="${saving >= 0 ? 'green' : 'red'}">${money(saving)}</b></div></div>
       ${income > 0 ? `<p class="muted small mt">${saving >= 0 ? `Ahorraste el ${Math.round((saving / income) * 100)} % de tus ingresos.` : 'Gastaste más de lo que ganaste este periodo.'}</p>` : ''}
     </section>
+    ${ms.length ? `<button class="card row-card" data-act="openReport" data-off="${ui.anOffset}"><span class="report-ic">💡</span>
+      <span class="grow"><b>Recomendaciones</b><small>Cómo manejaste tu plata frente a tus ingresos</small></span>${icon('right', 'muted')}</button>` : ''}
     <section class="card">
       <div class="seg">${['expense', 'income'].map((k) => `<button class="${ui.anKind === k ? 'on' : ''}" data-act="anKind" data-k="${k}">${k === 'expense' ? 'Gastos' : 'Ingresos'}</button>`).join('')}</div>
       ${!slices.length ? `<div class="empty">${icon('pie', 'big')}<b>Sin datos</b><small>No hay ${ui.anKind === 'expense' ? 'gastos' : 'ingresos'} en este periodo.</small></div>` : `
@@ -1087,7 +1113,7 @@ SHEETS.pickCat = {
 A.pickedCat = (d) => { closeSheet(); setTimeout(() => openSheet('catBudget', { id: d.id }), 300); };
 A.openCatBudget = (d) => openSheet('catBudget', { id: d.id });
 SHEETS.catBudget = {
-  init: ({ id }) => ({ budget: L.catById(id)?.budget || 0 }),
+  init: ({ id, suggest }) => ({ budget: L.catById(id)?.budget || suggest || 0 }),
   html: (sh) => {
     const c = L.catById(sh.props.id);
     return `${head('Presupuesto', '<button class="link bold" data-act="saveCatBudget">Guardar</button>')}
@@ -1278,6 +1304,51 @@ SHEETS.catDetail = {
       <section class="card list">${items.map((m) => movementRow(m, true)).join('')}</section></div>`;
   },
 };
+
+// ---------------------------------------------------------------- Resumen del mes
+
+A.openReport = (d) => {
+  const off = Number(d.off || 0);
+  const p = M.shiftPeriod(L.currentPeriod(), off);
+  S().reportsSeen = { ...(S().reportsSeen || {}), [toInputDate(p.start)]: true };
+  save();
+  openSheet('report', { off });
+};
+SHEETS.report = {
+  init: ({ off }) => ({ off }),
+  html: (sh) => {
+    const p = M.shiftPeriod(L.currentPeriod(), sh.st.off);
+    const r = reportFor(p);
+    const top = `${head('Resumen del mes', done, '<span></span>')}<div class="sh-body">
+      <section class="card pad-s">${periodNav(sh.st.off, 'repPeriod')}</section>`;
+    if (!r.hasData) return `${top}<div class="empty"><div class="emoji-big">📭</div><b>Sin movimientos</b><small>No hay gastos ni ingresos en este periodo.</small></div></div>`;
+    const scale = Math.max(r.base, r.spent) || 1;
+    const w = (v) => `${Math.max(v, 0) / scale * 100}%`;
+    const share = (v) => (r.base > 0 ? Math.round(Math.max(v, 0) / r.base * 100) : 0);
+    return `${top}
+      <section class="card">
+        <div class="split rep-nums"><div><small class="muted">Ingresos</small><b class="block">${money(r.income)}</b></div>
+          <div class="center-text"><small class="muted">Gastos</small><b class="block">${money(r.spent)}</b></div>
+          <div class="right"><small class="muted">${r.saving >= 0 ? 'Ahorro' : 'Déficit'}</small><b class="block ${r.saving >= 0 ? 'green' : 'red'}">${money(r.saving)}</b></div></div>
+        ${r.base > 0 ? `<div class="rule-bar"><i style="width:${w(r.needs)};background:#3B82F6"></i><i style="width:${w(r.wants)};background:#F97316"></i><i style="width:${w(r.saving)};background:var(--green)"></i></div>
+          <div class="legend-inline rule-legend"><span><i style="background:#3B82F6"></i>Básicos ${share(r.needs)}&nbsp;%</span><span><i style="background:#F97316"></i>Gustos ${share(r.wants)}&nbsp;%</span><span><i style="background:var(--green)"></i>Ahorro ${share(r.saving)}&nbsp;%</span></div>
+          <p class="muted tiny">Guía 50/30/20: hasta 50 % en lo básico, hasta 30 % en gustos y al menos 20 % para ahorrar.</p>` : ''}
+        ${r.incomeNote ? `<p class="muted tiny">${esc(r.incomeNote)}</p>` : ''}
+      </section>
+      <small class="muted b pad-x">${r.partial ? 'Cómo vas este mes' : 'Recomendaciones'}</small>
+      ${r.tips.map((t) => `<section class="card tip ${t.level}"><span class="tip-ic">${t.icon}</span><div class="grow"><b>${esc(t.title)}</b><p>${esc(t.text)}</p>
+        ${t.suggest && !(L.catById(t.catId)?.budget > 0 && L.catById(t.catId).budget <= t.suggest) ? `<button class="link tip-act" data-act="tipBudget" data-id="${t.catId}" data-s="${t.suggest}">Ponerle un tope de ${money(t.suggest)}</button>` : ''}
+        ${t.goalId ? `<button class="link tip-act" data-act="openGoal" data-id="${t.goalId}">Aportar a la meta</button>` : ''}</div></section>`).join('')}
+      ${r.base > 0 ? `<section class="card"><h3>Para el próximo mes</h3>
+        <p class="muted small">Presupuesto sugerido: <b>${money(r.suggestedBudget)}</b>, el 80 % de tus ingresos, para ahorrar el 20 %.</p>
+        ${S().budget === r.suggestedBudget ? '<p class="small green mt">✓ Ya es tu presupuesto</p>'
+          : `<button class="secondary sm mt" data-act="applyBudget" data-v="${r.suggestedBudget}">Usar este presupuesto</button>`}</section>` : ''}
+      <p class="foot-note">Son recomendaciones generales para organizar tu plata, calculadas en tu teléfono. No reemplazan la asesoría de un profesional.</p></div>`;
+  },
+};
+A.repPeriod = (d) => { const sh = topSheet(); sh.st.off = d.d === '0' ? 0 : Math.min(sh.st.off + Number(d.d), 0); refreshSheet(sh); };
+A.applyBudget = (d) => { S().budget = Number(d.v) || 0; commit('Presupuesto actualizado'); refreshSheet(); };
+A.tipBudget = (d) => openSheet('catBudget', { id: d.id, suggest: Number(d.s) || 0 });
 
 // ---------------------------------------------------------------- Ajustes
 

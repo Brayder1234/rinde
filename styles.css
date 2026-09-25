@@ -312,3 +312,18 @@ button.safe { display: block; width: 100%; text-align: left; }
 .code-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 10px 12px; margin: 4px 0 8px; border-radius: 12px; background: var(--fill); font: 600 15px/1.4 ui-monospace, "SF Mono", Menlo, monospace; }
 .code-line i { font-style: normal; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 13px; background: var(--brand); color: #fff; padding: 3px 8px; border-radius: 7px; }
 .paste-box { display: block; width: 100%; border: 0; outline: none; background: none; resize: none; font-size: 16px; color: var(--text); }
+
+/* ---------- Resumen y recomendaciones del mes */
+.report-ic { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-size: 22px; background: rgba(234, 179, 8, .16); flex: none; }
+.rule-bar { display: flex; height: 10px; border-radius: 99px; overflow: hidden; background: var(--fill); margin: 16px 0 8px; }
+.rule-bar i { display: block; height: 100%; }
+.tip { display: flex; gap: 12px; align-items: flex-start; border-left: 4px solid var(--fill); }
+.tip.bad { border-left-color: var(--red); } .tip.warn { border-left-color: var(--orange); }
+.tip.info { border-left-color: #3B82F6; } .tip.good { border-left-color: var(--green); }
+.tip-ic { font-size: 24px; line-height: 1.1; flex: none; }
+.tip b { display: block; margin-bottom: 4px; }
+.tip p { margin: 0; font-size: 14px; line-height: 1.45; color: var(--muted); }
+.tip-act { display: inline-block; margin-top: 8px; font-size: 14px; font-weight: 600; }
+.rep-nums b { font-size: clamp(13px, 4.1vw, 17px); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rule-legend { flex-wrap: wrap; gap: 6px 14px; }
+.rule-legend span { white-space: nowrap; }

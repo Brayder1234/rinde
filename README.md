@@ -11,7 +11,7 @@ Versión web instalable (PWA) de Rinde. Se abre en Safari y se instala con **Com
 Pruebas del analizador de texto:
 
 ```bash
-node tests/parser.test.mjs
+node tests/parser.test.mjs && node tests/advice.test.mjs
 ```
 
 Para publicar cambios, sube la versión de `CACHE` en `sw.js`.
