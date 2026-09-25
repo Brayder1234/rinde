@@ -1,5 +1,5 @@
 // Service worker: guarda la app para que abra sin internet.
-const CACHE = 'rinde-v7';
+const CACHE = 'rinde-v8';
 const SHELL = [
   './', './index.html', './styles.css', './manifest.webmanifest',
   './js/app.js', './js/ui.js', './js/logic.js', './js/store.js', './js/parser.js', './js/catalog.js', './js/money.js', './js/charts.js', './js/advice.js',

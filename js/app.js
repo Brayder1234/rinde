@@ -72,8 +72,11 @@ function boot() {
   document.addEventListener('input', (e) => { const fn = IN[e.target.dataset.in]; if (fn) fn(e.target, e); });
   document.addEventListener('change', (e) => { const fn = CH[e.target.dataset.ch]; if (fn) fn(e.target, e); });
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && L.processRecurring() && !ui.sheets.length) render();
+    if (document.visibilityState !== 'visible') return;
+    if (L.processRecurring() && !ui.sheets.length) render();
+    showPastePill();
   });
+  showPastePill();
   matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', applyTheme);
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('./sw.js').catch(() => {});
   askPersistence();
@@ -599,6 +602,7 @@ const topSheet = () => ui.sheets[ui.sheets.length - 1];
 const sheetEl = (sh) => $(`[data-sheet="${sh.id}"]`);
 
 function openSheet(type, props = {}) {
+  hidePastePill();
   const sh = { id: uid(), type, props, st: SHEETS[type].init ? SHEETS[type].init(props) : {} };
   ui.sheets.push(sh);
   const wrap = document.createElement('div');
@@ -893,6 +897,27 @@ async function importPayments(text) {
   return true;
 }
 
+/** Al abrir Rinde (con Apple Pay configurado) ofrece pegar el último pago con un toque. */
+let pillTimer;
+function showPastePill() {
+  if (!S().onboarded || !S().applePay || ui.sheets.length) return;
+  let el = $('#pastePill');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'pastePill';
+    el.innerHTML = `<button class="pill-main" data-act="pillPaste">${icon('clipboard')}<span>Pegar pago de Apple Pay</span></button>
+      <button class="pill-x" data-act="hidePastePill" aria-label="Cerrar">${icon('x')}</button>`;
+    document.body.append(el);
+  }
+  void el.offsetWidth; // aplica el estado inicial para que se vea la animación
+  el.classList.add('show');
+  clearTimeout(pillTimer);
+  pillTimer = setTimeout(hidePastePill, 15000);
+}
+function hidePastePill() { $('#pastePill')?.classList.remove('show'); }
+A.hidePastePill = () => hidePastePill();
+A.pillPaste = () => { hidePastePill(); A.pastePayment(); };
+
 A.pastePayment = async () => {
   const text = await readClipboard();
   if (text == null) { openSheet('paste'); return; }
@@ -934,24 +959,31 @@ A.pasteSubmit = async () => {
 };
 
 A.openApplePay = () => openSheet('applepay');
+const SHORTCUT_URL = 'atajo/Rinde%20Apple%20Pay.shortcut';
 SHEETS.applepay = {
   html: () => `${head('Pagos con Apple Pay', done, '<span></span>')}<div class="sh-body">
     <section class="card center-text"><div class="emoji-big">📲</div><h3>Registra tus pagos casi solos</h3>
-      <p class="muted small">Cada vez que pagues con Apple Pay, tu iPhone copia el pago. Luego abres Rinde, tocas <b>Pegar pago de Apple Pay</b> y queda registrado con el comercio, la categoría y la cuenta.</p></section>
-    <small class="muted b pad-x">Configúralo una sola vez en la app Atajos</small>
+      <p class="muted small">Cada vez que pagues con Apple Pay, tu iPhone copia el pago y te avisa. Abres Rinde, tocas <b>Pegar pago</b> y queda registrado con el comercio, la categoría y la cuenta.</p></section>
+    <small class="muted b pad-x">Paso 1 · Instala el atajo</small>
+    <a class="primary" href="${SHORTCUT_URL}" target="_blank" rel="noopener">Instalar atajo “Rinde Apple Pay”</a>
+    <p class="foot-note mt">Toca <b>Descargar</b>, ábrelo y en Atajos toca <b>Agregar atajo</b>.</p>
+    <small class="muted b pad-x">Paso 2 · Que se ejecute al pagar</small>
     <section class="card steps-list">
-      <p><b>1.</b> Abre <b>Atajos</b> → pestaña <b>Automatización</b> → botón <b>＋</b>.</p>
-      <p><b>2.</b> Elige <b>Transacción</b>, marca tus tarjetas, selecciona <b>Ejecutar inmediatamente</b> y toca <b>Siguiente</b>.</p>
-      <p><b>3.</b> Toca <b>Nuevo atajo en blanco</b> y agrega la acción <b>Texto</b>.</p>
-      <p><b>4.</b> En el texto escribe <b>RINDE|</b> y, separados por <b>|</b>, inserta tres datos de la transacción:</p>
-      <div class="code-line"><span>RINDE|</span><i>Importe</i><span>|</span><i>Comercio</i><span>|</span><i>Tarjeta</i></div>
-      <p class="muted small">Para insertar un dato toca <b>Entrada del atajo</b> encima del teclado; después toca la palabra que quedó en el texto y elige Importe, Comercio o Tarjeta. Los nombres pueden variar un poco según tu versión de iOS.</p>
-      <p><b>5.</b> Agrega la acción <b>Copiar al portapapeles</b>.</p>
-      <p><b>6.</b> (Opcional) Agrega <b>Mostrar notificación</b> con el texto “Pago copiado: regístralo en Rinde”.</p></section>
+      <p><b>1.</b> Abre <b>Atajos</b> → pestaña <b>Automatización</b> → <b>＋</b> (o <b>Nueva automatización</b>).</p>
+      <p><b>2.</b> Elige <b>Wallet</b> (en España se llama <b>Cartera</b>), marca tus tarjetas y selecciona <b>Ejecutar de inmediato</b>. Toca <b>Siguiente</b>.</p>
+      <p><b>3.</b> En la lista de atajos elige <b>Rinde Apple Pay</b>. ¡Listo!</p></section>
+    <small class="muted b pad-x">Paso 3 · Úsalo</small>
+    <section class="card"><p class="muted small">Paga con Apple Pay → te llega el aviso “Pago copiado” → abre Rinde y toca <b>Pegar pago</b> (y luego <b>Pegar</b> en la burbujita del iPhone).</p></section>
+    <details class="card manual"><summary>¿Prefieres crearlo a mano?</summary>
+      <div class="steps-list">
+        <p><b>1.</b> En la automatización de Wallet elige <b>Nuevo atajo en blanco</b> y agrega la acción <b>Texto</b>.</p>
+        <p><b>2.</b> Escribe <b>RINDE|</b> e inserta, separados por <b>|</b>, estos datos de la transacción:</p>
+        <div class="code-line"><span>RINDE|</span><i>Cantidad</i><span>|</span><i>Comercio</i><span>|</span><i>Tarjeta o pase</i></div>
+        <p class="muted small">Toca <b>Entrada del atajo</b> encima del teclado, luego toca la palabra que quedó en el texto y elige el dato. En España “Cantidad” se llama “Importe”.</p>
+        <p><b>3.</b> Agrega <b>Copiar al portapapeles</b> y, si quieres, <b>Mostrar notificación</b>.</p></div></details>
     <section class="card"><h3>Consejos</h3>
       <p class="muted small">• Si el nombre de la tarjeta dice el banco (Bancolombia, Davivienda, Nequi), Rinde elige la cuenta solo. Si pone otra, corrígela una vez y la recordará para esa tarjeta.</p>
-      <p class="muted small">• El portapapeles guarda solo el último pago: regístralo antes de volver a pagar.</p>
-      <p class="muted small">• (Opcional) Al final del texto agrega <b>|</b> y <b>Fecha actual</b> con formato ISO 8601 para guardar la hora exacta aunque lo registres más tarde.</p>
+      <p class="muted small">• El iPhone guarda solo el último pago copiado: regístralo antes de volver a pagar.</p>
       <p class="muted small">• También puedes pegar el mensaje de compra que te manda el banco: Rinde intenta entenderlo.</p></section>
     <button class="primary" data-act="applePayReady">Ya lo configuré</button></div>`,
 };
