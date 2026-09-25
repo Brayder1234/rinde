@@ -965,8 +965,8 @@ SHEETS.applepay = {
     <section class="card center-text"><div class="emoji-big">📲</div><h3>Registra tus pagos casi solos</h3>
       <p class="muted small">Cada vez que pagues con Apple Pay, tu iPhone copia el pago y te avisa. Abres Rinde, tocas <b>Pegar pago</b> y queda registrado con el comercio, la categoría y la cuenta.</p></section>
     <small class="muted b pad-x">Paso 1 · Instala el atajo</small>
-    <a class="primary" href="${SHORTCUT_URL}" target="_blank" rel="noopener">Instalar atajo “Rinde Apple Pay”</a>
-    <p class="foot-note mt">Toca <b>Descargar</b>, ábrelo y en Atajos toca <b>Agregar atajo</b>.</p>
+    <a class="primary" href="${SHORTCUT_URL}" download="Rinde Apple Pay.shortcut">Instalar atajo “Rinde Apple Pay”</a>
+    <p class="foot-note mt">Toca <b>Descargar</b>; luego abre las descargas (la flecha ⬇︎ de Safari) y toca el archivo: se abre Atajos con el botón <b>Agregar atajo</b>. Si ya usas Atajos con iCloud en tu Mac, puede que ya lo tengas.</p>
     <small class="muted b pad-x">Paso 2 · Que se ejecute al pagar</small>
     <section class="card steps-list">
       <p><b>1.</b> Abre <b>Atajos</b> → pestaña <b>Automatización</b> → <b>＋</b> (o <b>Nueva automatización</b>).</p>
